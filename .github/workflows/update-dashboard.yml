@@ -1,0 +1,45 @@
+name: update-dashboard
+
+on:
+  schedule:
+    # GitHub 的排程用 UTC 時間，台灣時間 = UTC + 8
+    # 分鐘排在 :17，避開整點最擁擠的時段
+    - cron: '17 11 * * 1-5'   # 台灣週一～五 19:17（收盤價、匯率）
+    - cron: '17 14 * * 1-5'   # 台灣週一～五 22:17（法人、融資融券）
+    - cron: '17 0 * * 2-6'    # 台灣週二～六 08:17（前一個美股日）
+  workflow_dispatch:           # 在 Actions 頁面可以手動按 Run workflow
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python dashboard.py --no-open --public --out site/index.html
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
