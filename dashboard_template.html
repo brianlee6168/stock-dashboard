@@ -61,7 +61,18 @@ ul.pts{list-style:none;padding:0;margin:0 0 6px}
 ul.pts li{padding:5px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:baseline}
 .big2{font-size:16px;font-weight:700;margin:4px 0 6px}
 .ai{line-height:1.8;background:var(--sel);border-radius:6px;padding:12px 14px}
-.tabs{overflow-x:auto}.tabs button{white-space:nowrap}
+.tabs{overflow-x:auto}
+.grid4{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px 16px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld small{color:var(--mute);font-size:12px}
+.fld i{font-style:normal;color:var(--mute);font-size:12px}
+.fld input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+.ro{padding:8px 10px;border-radius:6px;background:var(--sel);font-weight:700;font-variant-numeric:tabular-nums}
+.status{border-radius:6px;padding:12px 14px;margin-bottom:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--mute)}
+.status.hit{border-left-color:var(--up)}.status.warn{border-left-color:#e0a800}
+button.pri{font:inherit;padding:8px 14px;border:0;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer}
+button.ghost{font:inherit;font-size:13px;padding:2px 8px;border:1px solid var(--line);border-radius:4px;background:none;color:var(--mute);cursor:pointer}
+table.lad tr.now td{background:var(--sel);font-weight:700}table.lad tr.est td{color:var(--mute)}.tabs button{white-space:nowrap}
 .big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
 @media (max-width:760px){.wrap{grid-template-columns:1fr}nav{display:flex;overflow-x:auto}nav button{flex:0 0 auto;width:auto;gap:8px}nav hr{display:none}.grid2{grid-template-columns:1fr}}
 </style>
@@ -296,23 +307,131 @@ function pChips(s) {
   ${src(`來源：FinMind（證交所）｜法人 ${esc(ins?.date ?? "—")}、融資融券 ${esc(m?.date ?? "—")}、借券 ${esc(b?.date ?? "—")}｜FinMind 約 20:00 更新法人、21:00 更新融資融券，所以完整資料在 21:00 那次執行才會齊，若當晚還沒更新，隔天早上那次會補上`)}</section>`;
 }
 
+/* ---------- 我的策略 ---------- */
+const SKEY = "dash-strategy-v2";
+function sLoad() { try { return JSON.parse(localStorage.getItem(SKEY) || "null") || {}; } catch (e) { return {}; } }
+function sSave(o) { try { localStorage.setItem(SKEY, JSON.stringify(o)); } catch (e) {} }
+const pad = n => (n < 10 ? "0" : "") + n;
+const isoD = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const money = v => isNum(v) ? Math.round(v).toLocaleString("en-US") : "—";
+
+function stratCalc() {
+  const st = D.strategy || {}, S = sLoad(), set = S.settings || {};
+  const g = (k, def) => { const v = parseFloat(set[k]); return isFinite(v) ? v : def; };
+  const cfg = {
+    base: g("base", st.base), dep: g("dep", st.monthly_deposit), pct: g("pct", st.batch_pct),
+    pb: g("pb", st.pullback_pct), fpb: g("fpb", st.final_pullback_pct)
+  };
+  const buys = (S.buys || []).slice().sort((a, b) => a.d < b.d ? -1 : 1);
+  const tgt = D.stocks.find(x => x.code === st.target), o = tgt?.tech?.ohlc || [];
+  const dates = o.map(r => r[0]), closes = o.map(r => r[4]);
+  const hd = st.high_days || 20, win = closes.slice(-hd);
+  let H = null, Hd = null;
+  win.forEach((v, i) => { if (H === null || v > H) { H = v; Hd = dates[dates.length - win.length + i]; } });
+  const close = closes[closes.length - 1], closeDate = dates[dates.length - 1];
+
+  // 本輪：每月 reset_day 號開始
+  const today = new Date(), rd = st.reset_day || 5;
+  const ps = today.getDate() >= rd ? new Date(today.getFullYear(), today.getMonth(), rd) : new Date(today.getFullYear(), today.getMonth() - 1, rd);
+  const nextReset = new Date(ps.getFullYear(), ps.getMonth() + 1, rd);
+  const psISO = isoD(ps), round = buys.filter(b => b.d >= psISO), n = round.length;
+  const NB = st.normal_batches || 6, TOTAL = NB + 1;
+  const last = round[n - 1];
+  const gap = last ? dates.filter(d => d > last.d).length : null;     // 上一批成交日的下一個交易日起算
+  const reset = !!last && gap >= (st.gap_reset_days || 20);
+  const ref = (!last || reset) ? H : last.p;
+  const drop = n < NB ? cfg.pb : cfg.fpb;
+  const trig = isNum(ref) ? ref * (1 - drop / 100) : null;
+  const diff = isNum(trig) && isNum(close) ? (close / trig - 1) * 100 : null;
+
+  // 加碼金：起算 ＋ 每月入帳 − 全部買進
+  const spent = buys.reduce((a, b) => a + b.p * b.s, 0), spentRound = round.reduce((a, b) => a + b.p * b.s, 0);
+  let nd = 0;
+  if (st.deposit_start) { const s0 = new Date(st.deposit_start + "T00:00:00"); let d = new Date(s0); while (d <= today) { nd++; d = new Date(s0.getFullYear(), s0.getMonth() + nd, s0.getDate()); } }
+  const bal = isNum(cfg.base) && isNum(cfg.dep) ? cfg.base + cfg.dep * nd - spent : null;
+  const pool = isNum(bal) ? bal + spentRound : null;            // 本輪開始時的餘額
+  const per = isNum(pool) && isNum(cfg.pct) ? pool * cfg.pct / 100 : null;
+  let nextDep = null;
+  if (st.deposit_start) { const s0 = new Date(st.deposit_start + "T00:00:00"); nextDep = s0 > today ? s0 : new Date(today.getFullYear(), today.getMonth() + (today.getDate() >= s0.getDate() ? 1 : 0), s0.getDate()); }
+  return {st, S, cfg, buys, round, n, NB, TOTAL, H, Hd, close, closeDate, gap, reset, ref, drop, trig, diff, bal, per, nextDep, nextReset, psISO, dates};
+}
+
 function pStrategy() {
-  const st = D.strategy || {};
-  const days = isNum(st.days_since) ? `${st.days_since} / ${st.max_gap_days} 個交易日` : "未設定上次買進日";
-  return `<div class="head"><h1>我的策略</h1><span class="m">套用標的 ${esc(st.target)}</span></div>
-  <section><h2>加碼觸發</h2><div class="kv">
-    <div><small>參考高點 H（${esc(st.H_label ?? "")}）</small><b>${f(st.H)}</b><br><small>${esc(st.H_date ?? "")}</small></div>
-    <div><small>下一批觸發價（H 回檔 ${st.pullback_pct}%）</small><b class="big">${f(st.trigger)}</b></div>
-    <div><small>最新收盤（${esc(st.close_date ?? "—")}）</small><b>${f(st.close)}</b></div>
-    <div><small>收盤距觸發價</small><b class="${cl(st.gap_pct)}">${isNum(st.gap_pct) ? sg(st.gap_pct) + "%" : "—"}</b></div>
-  </div>
-  <p class="tip">這頁是前一晚先算好明天的觸發價。依你的策略，隔天 13:00–13:20 再對照即時價下單，不用這頁的收盤價決定當天要不要買。</p>
-  <p class="tip">注意：股價未還原除權息，除息日前後 H 會失真，遇到除息請自行確認。</p></section>
-  <section><h2>資金狀態</h2><div class="kv">
-    <div><small>目前加碼金</small><b>${st.public ? "不公開" : f(st.reserve, 0)}</b></div>
-    <div><small>已完成批數</small><b>${st.public ? "不公開" : `${st.batches_done} / ${st.batches_total}`}</b></div>
-    <div><small>距上次買進</small><b>${days}</b></div></div>
-  ${src("參數在 dashboard.py 最上方的 STRATEGY 區修改，改完重新執行程式")}</section>`;
+  const c = stratCalc(), st = c.st;
+  const boughtToday = c.buys.some(b => b.d === isoD(new Date()));
+  const label = i => i === c.NB ? `第 ${i + 1} 批（最後加碼）` : `第 ${i + 1} 批`;
+  let msg, cls = "";
+  if (c.n >= c.TOTAL) { msg = `<b>本輪完成</b><br>本輪 ${c.TOTAL} 批都已加碼，不自動開下一輪。${isoD(c.nextReset)} 重置加碼次數。`; }
+  else if (boughtToday) { msg = `<b>今天已買進一批</b><br>一天最多一批，下一個交易日再評估。`; cls = "warn"; }
+  else if (isNum(c.diff) && c.diff <= 0) {
+    msg = `<b>已達${label(c.n)}條件</b><br>最新收盤 ${f(c.close)} ≤ 觸發價 ${f(c.trig)}。這批預算約 ${money(c.per)} 元${isNum(c.bal) && isNum(c.per) && c.per > c.bal ? "，但加碼金餘額不足" : ""}。隔天 13:00–13:20 確認當下仍低於觸發價再下單。`;
+    cls = isNum(c.bal) && isNum(c.per) && c.per > c.bal ? "warn" : "hit";
+  } else msg = `<b>${label(c.n)}尚未觸發</b><br>最新收盤 ${f(c.close)}，觸發價 ${f(c.trig)}，還差 ${isNum(c.diff) ? f(c.diff) + "%" : "—"}。`;
+  if (c.reset && c.n < c.TOTAL) msg += `<br>上一批成交後已滿 ${st.gap_reset_days} 個交易日未觸發，參考價改回 H。`;
+
+  // 七批階梯
+  let rows = "", prev = null;
+  for (let i = 0; i < c.TOTAL; i++) {
+    const b = c.round[i], d = i < c.NB ? c.cfg.pb : c.cfg.fpb;
+    let t, state, rc = "";
+    if (b) { t = b.t; state = "已成交"; prev = b.p; }
+    else if (i === c.n) { t = c.trig; state = "現在這批" + (isNum(c.diff) && c.diff <= 0 ? "（已達標）" : ""); rc = "now"; prev = t; }
+    else { prev = isNum(prev) ? prev * (1 - d / 100) : null; t = prev; state = "預估"; rc = "est"; }
+    rows += `<tr class="${rc}"><td>${label(i)}</td><td>${state}</td><td>-${d}%</td><td>${f(t)}</td><td>${b ? f(b.p) : "—"}</td><td>${b ? b.s : "—"}</td><td>${b ? money(b.p * b.s) : money(c.per)}</td><td>${b ? b.d : "—"}</td><td>${isNum(t) && isNum(c.H) ? f(t / c.H * 100, 0) + "%" : "—"}</td><td>${b ? `<button class="ghost" data-del="${esc(b.d)}">刪除</button>` : ""}</td></tr>`;
+  }
+  const inp = (id, lab, val, note, step) => `<label class="fld"><small>${lab}</small><input id="${id}" type="number" step="${step}" value="${isNum(val) ? val : ""}" placeholder="請填寫"><i>${note}</i></label>`;
+  const ro = (lab, val, note) => `<div class="fld"><small>${lab}</small><div class="ro">${val}</div><i>${note}</i></div>`;
+  return `<div class="head"><h1>我的策略</h1><span class="m">${esc(st.target)} 回檔加碼｜每月 ${st.reset_day} 號重置，最多 ${c.NB} 批＋最後加碼 1 批</span></div>
+  <div class="status ${cls}">${msg}</div>
+  <section><h2>目前數字</h2><p class="tip">這區由程式自動計算，不能修改。</p><div class="grid4">
+    ${ro(`前 ${st.high_days} 個交易日最高收盤（H）`, f(c.H), `最高在 ${esc(c.Hd ?? "—")}`)}
+    ${ro("最新收盤", f(c.close), `${esc(c.closeDate ?? "—")} 收盤`)}
+    ${ro("距上次買進（交易日）", c.gap === null ? "本輪尚未買進" : `${c.gap} / ${st.gap_reset_days}`, `從上一批成交日的下一個交易日起算，休市不計；滿 ${st.gap_reset_days} 天未觸發，參考價改回 H`)}
+    ${ro("參考價", f(c.ref), c.n === 0 ? "H" : c.reset ? "H（已重設）" : "前一批成交均價")}
+    ${ro(`${label(Math.min(c.n, c.TOTAL - 1))}觸發價`, c.n >= c.TOTAL ? "本輪完成" : f(c.trig), c.n >= c.TOTAL ? "" : `參考價 × (1 − ${c.drop}%)`)}
+    ${ro("最新收盤距觸發價", c.n >= c.TOTAL ? "—" : (isNum(c.diff) ? sg(c.diff) + "%" : "—"), "負數代表已低於觸發價")}
+    ${ro("本輪進度", `${c.n} / ${c.TOTAL} 批`, `本輪從 ${c.psISO} 起算，${isoD(c.nextReset)} 重置`)}
+  </div></section>
+  <section><h2>加碼金</h2>${st.public ? `<p class="tip">公開網頁不放你的金額，請在這台裝置填一次，只會存在這個瀏覽器裡。</p>` : ""}<div class="grid4">
+    ${inp("s_base", "起算加碼金（元）", c.cfg.base, "", 100)}
+    ${inp("s_dep", "每月 5 號入帳（元）", c.cfg.dep, `${esc(st.deposit_start ?? "")} 起`, 500)}
+    ${inp("s_pct", "每批比例（%）", c.cfg.pct, "本輪開始時餘額 × 比例", 1)}
+    ${inp("s_pb", "第 1–6 批回檔（%）", c.cfg.pb, "", 0.5)}
+    ${inp("s_fpb", "最後加碼回檔（%）", c.cfg.fpb, "比第 6 批成交價再跌", 0.5)}
+    ${ro("目前加碼金餘額", money(c.bal), "起算 ＋ 已入帳 − 全部買進")}
+    ${ro("每批金額", money(c.per), "")}
+    ${ro("這批約可買（股）", isNum(c.per) && isNum(c.close) ? Math.floor(c.per / c.close).toLocaleString("en-US") : "—", "以最新收盤估算")}
+    ${ro("下次入帳", c.nextDep ? `${isoD(c.nextDep).slice(5).replace("-", "/")}　＋${money(c.cfg.dep)}` : "—", "")}
+  </div></section>
+  <section><h2>記錄一筆買進</h2><div class="grid4">
+    <label class="fld"><small>日期</small><input id="b_d" type="date" value="${isoD(new Date())}"></label>
+    <label class="fld"><small>成交均價</small><input id="b_p" type="number" step="0.01" placeholder="例如 98.50"></label>
+    <label class="fld"><small>股數</small><input id="b_s" type="number" step="1" min="1" placeholder="例如 60"></label>
+    <div class="fld"><small>&nbsp;</small><button id="b_add" class="pri">加入紀錄</button></div>
+  </div><p class="tip" id="b_msg">紀錄只存在這台裝置的瀏覽器，換手機或電腦要另外記；清除瀏覽器資料會一起刪掉。</p></section>
+  <section><h2>七批階梯（本輪）</h2><div class="tbl"><table class="lad"><thead><tr><th>批次</th><th>狀態</th><th>回檔</th><th>觸發價</th><th>成交均價</th><th>股數</th><th>金額</th><th>日期</th><th>H 的幾 %</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+  <p class="tip">預估列假設每批剛好成交在觸發價；實際以你記錄的成交均價為準。一天最多買一批，建議使用限價單。股價未還原除權息，除息前後 H 會失真。</p></section>`;
+}
+
+function bindStrategy() {
+  const S = () => sLoad();
+  [["s_base", "base"], ["s_dep", "dep"], ["s_pct", "pct"], ["s_pb", "pb"], ["s_fpb", "fpb"]].forEach(([id, k]) => {
+    const el = document.getElementById(id); if (!el) return;
+    el.onchange = () => { const o = S(); o.settings = o.settings || {}; o.settings[k] = el.value; sSave(o); render(); };
+  });
+  const add = document.getElementById("b_add");
+  if (add) add.onclick = () => {
+    const d = document.getElementById("b_d").value, p = parseFloat(document.getElementById("b_p").value), s = parseInt(document.getElementById("b_s").value, 10);
+    const msg = document.getElementById("b_msg"), c = stratCalc();
+    if (!d || !(p > 0) || !(s > 0)) { msg.textContent = "請填日期、成交均價和股數。"; return; }
+    if (c.buys.some(b => b.d === d)) { msg.textContent = "這一天已有買進紀錄，一天最多一批。"; return; }
+    if (d >= c.psISO && c.n >= c.TOTAL) { msg.textContent = "本輪已完成 7 批，要等下次重置。"; return; }
+    const o = S(); o.buys = o.buys || []; o.buys.push({d, p, s, t: c.n < c.TOTAL ? c.trig : null}); sSave(o); render();
+  };
+  document.querySelectorAll("[data-del]").forEach(btn => btn.onclick = () => {
+    if (!confirm("確定刪除這筆買進紀錄？")) return;
+    const o = S(); o.buys = (o.buys || []).filter(b => b.d !== btn.dataset.del); sSave(o); render();
+  });
 }
 
 /* ---------- 版面 ---------- */
@@ -338,7 +457,7 @@ function pAnalysis(s) {
 
 function render() {
   const v = document.getElementById("view");
-  if (cur === -1) { v.innerHTML = pStrategy(); return; }
+  if (cur === -1) { v.innerHTML = pStrategy(); bindStrategy(); return; }
   const s = D.stocks[cur], q = s.quote || {};
   v.innerHTML = `<div class="head"><h1>${esc(s.code)}</h1><span>${esc(s.name)}</span><span class="m">${esc(s.kind)}</span>
     <span class="px ${cl(q.chg)}">${f(q.close)}</span><span class="${cl(q.chg)}">${sg(q.chg)}（${isNum(q.pct) ? sg(q.pct) + "%" : "—"}）</span>

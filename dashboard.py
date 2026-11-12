@@ -45,17 +45,19 @@ MANUAL = {
     "非農新增就業": "",    # 自動抓不到時才用，例如 "+11.9 萬人"
 }
 
-# 「我的策略」頁的參數。計算方式請對照你的策略文件，不符合的話再告訴我改。
+# 「我的策略」頁的參數（0050 回檔加碼）。買進紀錄存在你自己的瀏覽器裡，不會放上網。
 STRATEGY = {
-    "target": "0050",          # 套用策略的標的
-    "reserve": 40000,          # 目前加碼金
-    "batches_done": 0,         # 已完成批數
-    "batches_total": 6,        # 總批數
-    "pullback_pct": 5,         # 回檔幾 % 觸發加碼
-    "high_mode": "prev_month", # 參考高點 H：prev_month＝前一個日曆月份最高收盤價；lookback＝最近 N 個交易日
-    "high_lookback_days": 60,  # high_mode 為 lookback 時才用
-    "last_buy_date": "",       # 上次買進日期，例如 "2026-11-03"；沒有就留空
-    "max_gap_days": 20,        # 距上次買進的交易日上限
+    "target": "0050",            # 套用策略的標的
+    "base": 40000,               # 起算加碼金（元）
+    "monthly_deposit": 15000,    # 每月 5 號入帳（元）
+    "deposit_start": "2026-12-05",
+    "batch_pct": 15,             # 每批金額 ＝ 本輪開始時的加碼金餘額 × 15%
+    "pullback_pct": 5,           # 第 1–6 批：比參考價再跌 5% 觸發
+    "final_pullback_pct": 10,    # 第 7 批（最後加碼）：比第 6 批成交價再跌 10% 觸發
+    "normal_batches": 6,         # 一般批數；加上最後加碼共 7 批
+    "reset_day": 5,              # 每月 5 號重置加碼次數
+    "high_days": 20,             # H ＝ 最近 20 個交易日的最高收盤
+    "gap_reset_days": 20,        # 上一批成交後滿 20 個交易日都沒觸發，參考價改回 H
 }
 
 # 美國 AI 政策新聞的搜尋關鍵字（Google 新聞）
@@ -649,29 +651,18 @@ def fetch_us_ai_news():
 # ---------------------------------------------------------------------
 def build_strategy(price_df):
     st = dict(STRATEGY)
+    if "--public" in sys.argv:          # 公開網頁不放金額，第一次打開時在自己的瀏覽器填一次
+        st["base"] = st["monthly_deposit"] = None
+        st["public"] = True
     if price_df is None or price_df.empty:
         return st
     c = price_df.set_index("date")["close"]
-    if st.get("high_mode") == "prev_month":
-        first_this = TODAY.replace(day=1)
-        first_prev = (first_this - dt.timedelta(days=1)).replace(day=1)
-        look = c[(c.index >= first_prev.isoformat()) & (c.index < first_this.isoformat())]
-        st["H_label"] = f"{first_prev.year} 年 {first_prev.month} 月最高收盤"
-    else:
-        look = c.tail(int(st["high_lookback_days"]))
-        st["H_label"] = f"近 {st['high_lookback_days']} 日最高收盤"
-    if look.empty:
-        return st
+    look = c.tail(int(st["high_days"]))
     H = float(look.max())
     trig = H * (1 - st["pullback_pct"] / 100)
     st.update({"H": num(H, 2), "H_date": look.idxmax(), "trigger": num(trig, 2),
                "close": num(c.iloc[-1], 2), "close_date": c.index[-1],
                "gap_pct": num((c.iloc[-1] / trig - 1) * 100, 2)})
-    if "--public" in sys.argv:
-        st["reserve"] = st["batches_done"] = None
-        st["public"] = True
-    if st.get("last_buy_date"):
-        st["days_since"] = int((c.index > st["last_buy_date"]).sum())
     return st
 
 
@@ -894,8 +885,8 @@ def build_analysis(s, macro, strategy):
     # ---- 策略連動 ----
     if s["code"] == strategy.get("target") and strategy.get("trigger"):
         g = strategy.get("gap_pct")
-        add("strategy", "mid", f"收盤距離加碼觸發價 {strategy['trigger']:g}：{g:+.2f}%。" +
-            ("已低於觸發價，依你的策略隔天 13:00 對照即時價判斷。" if g is not None and g <= 0 else ""))
+        add("strategy", "mid", f"以 H（近 {strategy['high_days']} 個交易日最高收盤 {strategy['H']:g}）計算的第 1 批觸發價 {strategy['trigger']:g}，"
+            f"收盤距離 {g:+.2f}%。已有買進紀錄時，實際觸發價以「我的策略」頁為準。")
 
     up = sum(1 for k in ("tech", "chips") for x in A[k] if x["tone"] == "up")
     dn = sum(1 for k in ("tech", "chips") for x in A[k] if x["tone"] == "down")
