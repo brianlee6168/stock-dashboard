@@ -54,6 +54,7 @@ svg text{fill:var(--mute);font-size:11px}
 ul.news{list-style:none;padding:0;margin:0}
 ul.news li{padding:6px 0;border-bottom:1px solid var(--line)}
 ul.news li small{color:var(--mute);margin-left:6px}
+ul.news summary{cursor:pointer}
 ul.news a{color:var(--ink)}
 .empty{color:var(--mute);font-size:14px}
 .big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
@@ -86,19 +87,28 @@ function spark(vals) {
   const pts = v.map((x, i) => `${(i / (v.length - 1) * W).toFixed(1)},${(H - (x - lo) / ((hi - lo) || 1) * H).toFixed(1)}`).join(" ");
   return `<svg viewBox="0 0 ${W} ${H}" style="width:120px;height:22px" aria-label="近 30 天走勢"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>`;
 }
+function lightCell(l) {
+  if (!l) return "<b>—</b>";
+  if (typeof l === "string") return `<b>${esc(l)}</b>`;
+  const sc = l.score, col = !isNum(sc) ? "var(--mute)" : sc <= 16 ? "#2f6fd1" : sc <= 22 ? "#7aa7d9" : sc <= 31 ? "#1b9a4b" : sc <= 37 ? "#e0a800" : "#c62828";
+  const dots = (l.hist || []).map(([d, v]) => { const c = v <= 16 ? "#2f6fd1" : v <= 22 ? "#7aa7d9" : v <= 31 ? "#1b9a4b" : v <= 37 ? "#e0a800" : "#c62828";
+    return `<span title="${esc(d)}：${v} 分" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c};margin-right:3px"></span>`; }).join("");
+  return `<b><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${col};margin-right:5px"></span>${esc(l.value)}</b><br>${dots}`;
+}
 function renderMacro() {
   const m = D.macro || {};
   const q = (o, d = 2) => o ? `<b class="${cl(o.chg)}">${f(o.value, d)}</b> <span class="${cl(o.chg)}">${sg(o.chg, d)}</span>` : "<b>—</b>";
   const cells = [
-    ["加權指數", q(m.twii), "每天 19:00", "台股大盤，用來比較個別標的是強於還是弱於大盤。"],
-    ["費城半導體", q(m.sox), "每天 08:00（前一美股日）", "美國半導體股指數，台股電子權值股和它連動度高。"],
+    ["加權指數", q(m.twii), "每天 18:00", "台股大盤，用來比較個別標的是強於還是弱於大盤。"],
+    ["費城半導體", q(m.sox), "每天 07:00（前一美股日）", "美國半導體股指數，台股電子權值股和它連動度高。"],
     ["聯準會利率", `<b>${esc(m.fed?.value ?? "—")}</b>`, "開會後變動", "美國政策利率區間，影響全球資金流向。"],
     ["美國 CPI 年增率", `<b>${esc(m.cpi?.value ?? "—")}</b>`, `每月｜${esc(m.cpi?.date ?? "")}`, "美國通膨，影響聯準會下一步。"],
-    ["美債 10 年殖利率", m.us10y ? `<b>${f(m.us10y.value)}%</b> <span class="${cl(m.us10y.chg)}">${sg(m.us10y.chg)}</span>` : "<b>—</b>", "每天 08:00（前一美股日）", "全球資金成本參考，上升時股票相對吸引力通常下降。"],
-    ["台灣景氣燈號", `<b>${esc(m.light ?? "—")}</b>`, "每月｜手動填寫", "國發會每月公布，藍燈偏冷、紅燈偏熱。"],
-    ["出口訂單年增率", `<b>${esc(m.export ?? "—")}</b>`, "每月｜手動填寫", "反映電子業訂單動能。"],
-    ["USD/TWD", m.fx ? `<b>${f(m.fx.value, 3)}</b> <span>${sg(m.fx.chg, 3)}</span>${spark(m.fx.series)}` : "<b>—</b>", "近 30 天走勢｜每天 19:00", "數字變大代表台幣貶值。"],
-    ["資料產生時間", `<b>${esc(D.generated)}</b>`, "排程 19:00、22:00、08:00", "這份頁面最後一次執行程式的時間。"],
+    ["美債 10 年殖利率", m.us10y ? `<b>${f(m.us10y.value)}%</b> <span class="${cl(m.us10y.chg)}">${sg(m.us10y.chg)}</span>` : "<b>—</b>", "每天 07:00（前一美股日）", "全球資金成本參考，上升時股票相對吸引力通常下降。"],
+    ["台灣景氣燈號", lightCell(m.light), `每月｜${esc(m.light?.date ?? "")}`, "國發會每月約 27 日公布上個月燈號。9–16 分藍燈、17–22 黃藍燈、23–31 綠燈、32–37 黃紅燈、38–45 紅燈。"],
+    ["VIX 恐慌指數", m.vix ? `<b>${f(m.vix.value)}</b> <span>${sg(m.vix.chg)}</span>` : "<b>—</b>", "每天 07:00（前一美股日）", "美股預期波動程度。一般 20 以下算平靜，30 以上代表市場明顯恐慌。數字變大不是漲跌訊號，只表示波動預期升高。"],
+    ["美國非農新增就業", `<b class="${cl(m.nfp?.chg_raw)}">${esc(m.nfp?.value ?? "—")}</b>`, `每月｜${esc(m.nfp?.date ?? "")}`, "美國上個月新增多少就業人口，每月第一個週五公布。數字強代表景氣熱，可能讓聯準會較晚降息；之後常會被修正。"],
+    ["USD/TWD", m.fx ? `<b>${f(m.fx.value, 3)}</b> <span>${sg(m.fx.chg, 3)}</span>${spark(m.fx.series)}` : "<b>—</b>", "近 30 天走勢｜每天 18:00", "數字變大代表台幣貶值。"],
+    ["資料產生時間", `<b>${esc(D.generated)}</b>`, "排程 18:00、21:00、07:00", "這份頁面最後一次執行程式的時間。"],
   ];
   document.getElementById("macro").innerHTML = cells.map(c => `<div class="c" title="${esc(c[3])}"><small>${c[0]}</small>${c[1]}<i>${c[2]}</i></div>`).join("");
   const b = [];
@@ -182,13 +192,23 @@ function barMini(pairs) {
 /* ---------- 四個分頁 ---------- */
 const last = a => { for (let i = (a || []).length - 1; i >= 0; i--) if (isNum(a[i])) return a[i]; return null; };
 
+function divBlock(dv) {
+  if (!dv) return "";
+  let h = "";
+  if (dv.upcoming?.length) h += `<p class="tip"><b>即將除息：</b>${dv.upcoming.map(u => `${esc(u.ex)} 配 ${f(u.cash, 3)} 元${u.pay ? `（${esc(u.pay)} 發放）` : ""}`).join("；")}</p>`;
+  h += dv.history?.length ? `<div class="tbl"><table><thead><tr><th>除息日</th><th>配息（元）</th><th>除息前收盤</th><th>單次殖利率</th></tr></thead><tbody>${
+    dv.history.map(r => `<tr><td>${esc(r.date)}</td><td>${f(r.amt, 3)}</td><td>${f(r.before)}</td><td>${isNum(r.pct) ? f(r.pct) + "%" : "—"}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">近兩年沒有除息紀錄</p>`;
+  return h;
+}
+
 function pFund(s) {
-  const fu = s.fund || {}, p = fu.per || {};
+  const fu = s.fund || {}, p = fu.per || {}, dv = fu.div || {};
+  const yieldV = s.kind === "ETF" ? dv.ttm_yield : p.yield;
   let h = `<section><h2>基本面</h2><div class="kv">
     <div><small>收盤價</small><b>${f(s.quote?.close)}</b></div>
-    <div><small>本益比</small><b>${f(p.per)}</b></div>
-    <div><small>股價淨值比</small><b>${f(p.pbr)}</b></div>
-    <div><small>殖利率</small><b>${isNum(p.yield) ? f(p.yield) + "%" : "—"}</b></div></div>`;
+    ${s.kind === "個股" ? `<div><small>本益比</small><b>${f(p.per)}</b></div><div><small>股價淨值比</small><b>${f(p.pbr)}</b></div>` : ""}
+    <div><small>${s.kind === "ETF" ? "近 12 個月殖利率" : "殖利率"}</small><b>${isNum(yieldV) ? f(yieldV) + "%" : "—"}</b></div>
+    <div><small>近 12 個月配息合計</small><b>${isNum(dv.ttm) ? f(dv.ttm, 3) + " 元" : "—"}</b></div></div>`;
   if (s.kind === "個股") {
     h += `<h3>月營收（億元）</h3><p class="tip">年增率看和去年同月比，月增率看和上個月比；月營收在次月 10 日前公布。</p>`;
     h += fu.revenue?.length ? `<div class="tbl"><table><thead><tr><th>月份</th><th>營收</th><th>年增率</th><th>月增率</th></tr></thead><tbody>${
@@ -196,11 +216,20 @@ function pFund(s) {
     h += `<h3>近四季</h3><p class="tip">EPS 是每股賺多少錢；毛利率越高，代表產品越有定價能力。</p>`;
     h += fu.quarters?.length ? `<div class="tbl"><table><thead><tr><th>季度</th><th>EPS</th><th>毛利率</th></tr></thead><tbody>${
       fu.quarters.map(q => `<tr><td>${q.date}</td><td>${f(q.eps)}</td><td>${isNum(q.gm) ? f(q.gm, 1) + "%" : "—"}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">沒有財報資料</p>`;
-    h += src(`來源：FinMind（證交所、公開資訊觀測站）｜本益比資料日 ${esc(p.date ?? "—")}｜月營收、財報在公布後更新`);
+    h += `<h3>股利紀錄</h3>${divBlock(dv)}`;
+    h += src(`來源：FinMind（證交所、公開資訊觀測站）｜本益比資料日 ${esc(p.date ?? "—")}｜月營收、財報、股利在公布後更新`);
   } else {
-    h += `<h3>ETF 專屬項目</h3><p class="tip">成分股與權重、費用率、折溢價、配息紀錄、兩檔 ETF 的成分股重疊度：免費資料源沒有提供，請到投信官網或證交所 ETF 專區查看。</p>`;
-    if (s.code === "00406A") h += `<p class="tip">00406A 是主動式 ETF，另外要看：掩護性買權比例、經理人持股異動、月配息來源。以中信投信公開說明書為準。</p>`;
-    h += src(`來源：FinMind｜資料日 ${esc(p.date ?? "—")}`);
+    const ho = fu.holdings, rows = ho?.rows || [];
+    const top5 = rows.slice(0, 5).reduce((a, r) => a + r.w, 0);
+    h += `<h3>前十大持股</h3><p class="tip">前五大合計 <b>${rows.length ? f(top5, 1) + "%" : "—"}</b>。比例越集中，漲跌越受少數股票影響。</p>`;
+    h += rows.length ? `<div class="tbl"><table><thead><tr><th>股票</th><th>代號</th><th>比例</th></tr></thead><tbody>${
+      rows.slice(0, 10).map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.code)}</td><td>${f(r.w)}%</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">持股資料沒抓到</p>`;
+    if (fu.overlap?.length) h += `<h3>和其他 ETF 的持股重疊度</h3><p class="tip">把兩檔共同持有的股票，取較小的權重加總。數字越高，代表兩檔越像在買同一批股票。</p>
+      <div class="kv">${fu.overlap.map(o => `<div><small>和 ${esc(o.code)}</small><b>${f(o.pct, 1)}%</b></div>`).join("")}</div>`;
+    h += `<h3>配息紀錄</h3><p class="tip">單次殖利率＝配息 ÷ 除息前收盤價。近 12 個月殖利率＝近一年配息合計 ÷ 最新收盤價。</p>${divBlock(dv)}`;
+    if (s.code === "00406A") h += `<p class="tip">00406A 是主動式 ETF，持股由經理人調整，前十大持股的變化比被動式 ETF 更值得留意；掩護性買權比例請以中信投信公告為準。</p>`;
+    h += `<p class="tip">費用率、折溢價：目前沒有穩定的免費來源，請到投信官網查看。</p>`;
+    h += src(`來源：持股 MoneyDJ（資料日 ${esc(ho?.date ?? "—")}，通常每月或每週更新）｜配息 FinMind（證交所）`);
   }
   return h + `</section>`;
 }
@@ -225,18 +254,21 @@ function pTech(s) {
   </div>
   <h3>MACD(12, 26, 9)</h3><p class="tip">DIF 穿過 MACD 線往上偏多；柱狀體在 0 軸上方且變長，代表多方動能增強。它是落後指標，盤整時容易出現假訊號。</p>
   <div class="legend"><span style="--c:var(--ma5)">DIF</span><span style="--c:var(--ma20)">MACD</span></div>${macdChart(t)}
-  ${src(`來源：FinMind 日成交資料（未還原除權息）｜資料日 ${esc(s.quote?.date ?? "—")}｜每天 19:00 更新`)}</section>`;
+  ${src(`來源：FinMind 日成交資料（未還原除權息）｜資料日 ${esc(s.quote?.date ?? "—")}｜每天 18:00 更新`)}</section>`;
 }
 
 const newsList = arr => arr?.length ? `<ul class="news">${arr.map(n => `<li>${n.link ? `<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a>` : esc(n.title)}<small>${esc(n.source)}｜${esc(n.date)}</small></li>`).join("")}</ul>` : `<p class="empty">目前沒有新聞</p>`;
 
 function pNews(s) {
   return `<section><h2>相關新聞</h2><p class="tip">只列標題、時間與來源，不加利多／利空判斷。點標題看原文。</p>${newsList(s.news)}
-  ${src("來源：FinMind 新聞資料（彙整自各新聞網站）｜最多 5 則")}</section>
-  ${s.kind === "個股" ? `<section><h2>公司公告</h2><p class="tip">重大訊息（財報、股利決議、法說會）請到公開資訊觀測站查詢，目前沒有免費 API 可自動抓。</p></section>` :
-  `<section><h2>ETF 專屬</h2><p class="tip">成分股調整、配息公告、規模變化請到投信官網查看${s.code === "00406A" ? "；00406A 另外留意經理人持股異動" : ""}。</p></section>`}
+  ${src("來源：FinMind 新聞資料＋Google 新聞（近 3 天）｜去除重複後最多 8 則")}</section>
+  ${s.kind === "個股" ? `<section><h2>公司重大訊息</h2><p class="tip">證交所公布的重大訊息主旨，只包含最近一個交易日。</p>${
+    s.announce?.length ? `<ul class="news">${s.announce.map(a => `<li><details><summary>${esc(a.title)}<small>${esc(a.date)}${a.rule ? "｜" + esc(a.rule) : ""}</small></summary><p class="tip">${esc(a.desc)}</p></details></li>`).join("")}</ul>` : `<p class="empty">最近一個交易日沒有重大訊息</p>`}
+    ${src("來源：證交所 OpenAPI（上市公司每日重大訊息）｜完整歷史請到公開資訊觀測站")}</section>` :
+  `<section><h2>ETF 專屬</h2>${s.fund?.div?.upcoming?.length ? `<p class="tip"><b>配息公告：</b>${s.fund.div.upcoming.map(u => `${esc(u.ex)} 除息，每單位 ${f(u.cash, 3)} 元`).join("；")}</p>` : `<p class="tip">目前沒有查到已公告、尚未除息的配息。</p>`}
+    <p class="tip">持股變化請看「基本面」的前十大持股（含資料日期）；規模變化、成分股調整公告請到投信官網查看${s.code === "00406A" ? "，00406A 另外留意經理人持股異動" : ""}。</p></section>`}
   <section><h2>美國 AI 政策動態（所有標的相同）</h2><p class="tip">川普政府與民主黨：AI 資料中心相關政策與爭議。只列標題，政治立場不同的說法以同樣格式呈現。</p>
-  ${newsList(D.us_ai_news)}${src("來源：Google 新聞搜尋｜每天 08:00 更新｜標題來自各媒體，請點進原文確認")}</section>`;
+  ${newsList(D.us_ai_news)}${src("來源：Google 新聞搜尋｜每天 07:00 更新｜標題來自各媒體，請點進原文確認")}</section>`;
 }
 
 function pChips(s) {
@@ -256,7 +288,7 @@ function pChips(s) {
   ${ins ? `<div class="tbl"><table><thead><tr><th>法人</th><th>買進</th><th>賣出</th><th>買賣超</th></tr></thead><tbody>${
     ins.rows.map(r => `<tr><td>${r.name}</td><td>${f(r.buy, 0)}</td><td>${f(r.sell, 0)}</td><td class="${cl(r.net)}">${sg(r.net, 0)}</td></tr>`).join("")}</tbody></table></div>
     <h3>近 10 日外資買賣超</h3>${barMini(ins.foreign10)}` : `<p class="empty">沒有法人資料</p>`}
-  ${src(`來源：FinMind（證交所）｜法人 ${esc(ins?.date ?? "—")}、融資融券 ${esc(m?.date ?? "—")}、借券 ${esc(b?.date ?? "—")}｜FinMind 約 20:00 更新法人、21:00 更新融資融券，所以完整資料在 22:00 那次執行才會齊`)}</section>`;
+  ${src(`來源：FinMind（證交所）｜法人 ${esc(ins?.date ?? "—")}、融資融券 ${esc(m?.date ?? "—")}、借券 ${esc(b?.date ?? "—")}｜FinMind 約 20:00 更新法人、21:00 更新融資融券，所以完整資料在 21:00 那次執行才會齊，若當晚還沒更新，隔天早上那次會補上`)}</section>`;
 }
 
 function pStrategy() {

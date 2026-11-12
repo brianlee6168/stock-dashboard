@@ -12,7 +12,7 @@
 需要先安裝套件（只要做一次）：
     pip install requests pandas yfinance
 """
-import sys, os, io, json, random, time, webbrowser, pathlib
+import sys, os, io, re, json, random, time, webbrowser, pathlib
 import datetime as dt
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
@@ -38,11 +38,11 @@ STOCKS = [
     ("2360",   "致茂",             "個股"),
 ]
 
-# 這兩項沒有免費 API，每月公布後自己填，例如 "黃紅燈 35 分"、"+12.3%"
+# 以下都是「自動抓失敗時」才會用的備用值，平常留空即可
 MANUAL = {
-    "景氣燈號": "",
-    "出口訂單年增率": "",
+    "景氣燈號": "",        # 例如 "黃紅燈 35 分"
     "美國CPI年增率": "",   # 自動抓不到時才用，例如 "2.9%"
+    "非農新增就業": "",    # 自動抓不到時才用，例如 "+11.9 萬人"
 }
 
 # 「我的策略」頁的參數。計算方式請對照你的策略文件，不符合的話再告訴我改。
@@ -262,23 +262,134 @@ def fetch_chips(code):
     return ch
 
 
-def fetch_news(code):
-    items, seen = [], set()
-    for i in range(5):
+def gnews(query, n=8, lang="zh"):
+    """Google 新聞 RSS 搜尋，只取標題、來源、時間、連結。"""
+    loc = {"zh": {"hl": "zh-TW", "gl": "TW", "ceid": "TW:zh-Hant"},
+           "en": {"hl": "en-US", "gl": "US", "ceid": "US:en"}}[lang]
+    r = get_retry("https://news.google.com/rss/search", params={"q": query, **loc})
+    root = ET.fromstring(r.content)
+    out = []
+    for it in root.iter("item"):
+        when = it.findtext("pubDate") or ""
+        try:
+            when = parsedate_to_datetime(when).astimezone(TW).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            pass
+        title = (it.findtext("title") or "").strip()
+        src = (it.findtext("source") or "").strip()
+        if src and title.endswith(" - " + src):
+            title = title[: -len(src) - 3]
+        out.append({"date": when, "title": title, "source": src, "link": it.findtext("link") or ""})
+        if len(out) >= n:
+            break
+    return out
+
+
+def fetch_news(code, name, limit=8):
+    items = []
+    for i in range(3):
         day = (TODAY - dt.timedelta(days=i)).isoformat()
-        n = safe(f"{code} 新聞 {day}", lambda: fm("TaiwanStockNews", code, start=day))
+        n = safe(f"{code} FinMind 新聞 {day}", lambda: fm("TaiwanStockNews", code, start=day))
         if n is None or n.empty:
             continue
-        for r in n.sort_values("date", ascending=False).itertuples():
-            title = str(getattr(r, "title", "")).strip()
-            if not title or title in seen:
-                continue
-            seen.add(title)
-            items.append({"date": str(r.date)[:16], "title": title,
+        for r in n.itertuples():
+            items.append({"date": str(r.date)[:16], "title": str(getattr(r, "title", "")).strip(),
                           "source": str(getattr(r, "source", "")), "link": str(getattr(r, "link", ""))})
-        if len(items) >= 5:
+    items += safe(f"{code} Google 新聞", lambda: gnews(f'"{name}" OR "{code}" when:3d', n=10), []) or []
+    seen, out = set(), []
+    for it in sorted(items, key=lambda x: x["date"], reverse=True):
+        key = re.sub(r"\W", "", it["title"])[:30]
+        if not it["title"] or key in seen:
+            continue
+        seen.add(key)
+        out.append(it)
+    return out[:limit]
+
+
+def roc_date(sv):
+    """民國日期 1151112 → 2026-11-12"""
+    sv = re.sub(r"\D", "", str(sv or ""))
+    if len(sv) < 7:
+        return str(sv)
+    return f"{int(sv[:-4]) + 1911}-{sv[-4:-2]}-{sv[-2:]}"
+
+
+def fetch_announcements(codes):
+    """證交所 OpenAPI：上市公司每日重大訊息（只有最近一個交易日）。"""
+    rows = get_retry("https://openapi.twse.com.tw/v1/opendata/t187ap04_L").json()
+    out = {}
+    for row in rows:
+        row = {str(k).strip(): ("" if v is None else str(v).strip()) for k, v in row.items()}
+        c = row.get("公司代號")
+        if c not in codes:
+            continue
+        t = re.sub(r"\D", "", row.get("發言時間", ""))
+        out.setdefault(c, []).append({
+            "date": roc_date(row.get("發言日期")) + (f" {t[:2]}:{t[2:4]}" if len(t) >= 4 else ""),
+            "title": row.get("主旨", ""), "rule": row.get("符合條款", ""),
+            "desc": row.get("說明", "")[:400]})
+    return out
+
+
+def fetch_dividends(code, close):
+    d = {}
+    dr = safe(f"{code} 除息紀錄", lambda: fm("TaiwanStockDividendResult", code, start=days_ago(800)))
+    if dr is not None and not dr.empty:
+        dr = dr.sort_values("date", ascending=False)
+        rows = []
+        for r in dr.itertuples():
+            amt, before = float(r.stock_and_cache_dividend), float(r.before_price)
+            rows.append({"date": r.date, "amt": num(amt, 3), "before": num(before, 2),
+                         "pct": num(amt / before * 100, 2) if before else None})
+        d["history"] = rows[:8]
+        ttm = sum(x["amt"] or 0 for x in rows if x["date"] >= days_ago(365))
+        d["ttm"] = num(ttm, 3)
+        if close:
+            d["ttm_yield"] = num(ttm / close * 100, 2)
+    dv = safe(f"{code} 股利公告", lambda: fm("TaiwanStockDividend", code, start=days_ago(240)))
+    if dv is not None and not dv.empty:
+        up = []
+        for r in dv.itertuples():
+            ex = str(getattr(r, "CashExDividendTradingDate", "") or "")
+            if ex and ex >= TODAY.isoformat():
+                cash = float(getattr(r, "CashEarningsDistribution", 0) or 0) + float(getattr(r, "CashStatutorySurplus", 0) or 0)
+                up.append({"ex": ex, "cash": num(cash, 3), "pay": str(getattr(r, "CashDividendPaymentDate", "") or "")})
+        if up:
+            d["upcoming"] = sorted(up, key=lambda x: x["ex"])
+    return d
+
+
+def fetch_holdings(code):
+    """MoneyDJ ETF 持股明細。網頁格式若改版會抓不到，頁面會顯示「—」。"""
+    url = f"https://www.moneydj.com/ETF/X/Basic/Basic0007.xdjhtm?etfid={code.lower()}.tw"
+    html = get_retry(url).content.decode("utf-8", errors="replace")
+    date = None
+    i = html.find("持股明細")
+    m = re.search(r"資料日期[：:]\s*(\d{4}/\d{1,2}/\d{1,2})", html[i:] if i >= 0 else html)
+    if m:
+        date = m.group(1).replace("/", "-")
+    rows = []
+    for t in pd.read_html(io.StringIO(html)):
+        cols = [str(c) for c in t.columns]
+        nc = next((c for c in cols if "名稱" in c), None)
+        wc = next((c for c in cols if "比例" in c), None)
+        if not nc or not wc or "產業" in "".join(cols) or "區域" in "".join(cols):
+            continue
+        t.columns = cols
+        for _, r in t.iterrows():
+            nm = str(r[nc]).strip()
+            w = pd.to_numeric(str(r[wc]).replace("%", ""), errors="coerce")
+            if not nm or pd.isna(w):
+                continue
+            mm = re.match(r"(.*?)\((\w+)\.TW\)", nm)
+            rows.append({"name": (mm.group(1) if mm else nm).strip(), "code": mm.group(2) if mm else nm,
+                         "w": round(float(w), 2)})
+        if rows:
             break
-    return items[:5]
+    if not rows:
+        raise RuntimeError("網頁上找不到持股表格")
+    rows.sort(key=lambda x: -x["w"])
+    return {"date": date, "rows": rows}
 
 
 # ---------------------------------------------------------------------
@@ -393,27 +504,72 @@ def fetch_macro():
         return last_change(s, 2)
     mc["us10y"] = first_ok("美債 10 年", us10_fred, us10_yahoo)
 
-    mc["light"] = MANUAL.get("景氣燈號") or None
-    mc["export"] = MANUAL.get("出口訂單年增率") or None
+    mc["vix"] = safe("VIX 恐慌指數", lambda: last_change(yf_hist("^VIX")))
+
+    def nfp_fred():
+        df = fred("PAYEMS")
+        chg = df["value"].iloc[-1] - df["value"].iloc[-2]
+        return {"value": f"{chg / 10:+.1f} 萬人", "chg_raw": num(chg, 0), "date": df["date"].iloc[-1][:7]}
+
+    def nfp_bls(ver="v2"):
+        j = get_retry(f"https://api.bls.gov/publicAPI/{ver}/timeseries/data/CES0000000001").json()
+        if j.get("status") != "REQUEST_SUCCEEDED":
+            raise RuntimeError(" ".join(j.get("message") or ["BLS 拒絕請求"]))
+        rows = {}
+        for d in j["Results"]["series"][0]["data"]:
+            if not d["period"].startswith("M") or d["period"] == "M13":
+                continue
+            try:
+                rows[(int(d["year"]), int(d["period"][1:]))] = float(d["value"])
+            except ValueError:
+                continue  # 官方沒公布的月份是 "-"，跳過
+        for (y, m) in sorted(rows, reverse=True):
+            prev = (y, m - 1) if m > 1 else (y - 1, 12)
+            if prev in rows:
+                chg = rows[(y, m)] - rows[prev]
+                return {"value": f"{chg / 10:+.1f} 萬人", "chg_raw": num(chg, 0), "date": f"{y}-{m:02d}"}
+        raise RuntimeError("BLS 資料不足以計算")
+
+    def nfp_manual():
+        if not MANUAL.get("非農新增就業"):
+            raise RuntimeError("MANUAL 裡的非農新增就業沒有填")
+        return {"value": MANUAL["非農新增就業"], "date": "手動填寫"}
+    mc["nfp"] = first_ok("非農就業", nfp_fred, nfp_bls, lambda: nfp_bls("v1"), nfp_manual)
+
+    def light_ndc():
+        page = "https://index.ndc.gov.tw/n/zh_tw/data/eco"
+        ss = requests.Session()
+        ss.headers.update({**UA, "Referer": page})
+        html = ss.get(page, timeout=30).text
+        m = re.search(r'name="csrf-token" content="([^"]+)"', html)
+        if not m:
+            raise RuntimeError("國發會網頁找不到 csrf-token")
+        ss.headers.update({"X-CSRF-TOKEN": m.group(1), "X-Requested-With": "XMLHttpRequest"})
+        r = ss.post("https://index.ndc.gov.tw/n/json/data/eco/indicators", timeout=60)
+        r.raise_for_status()
+        for ser in r.json().get("line", {}).values():
+            if ser.get("name") == "景氣對策信號" and "分" in (ser.get("unit") or ""):
+                pts = [p for p in ser.get("data", []) if p.get("y") is not None]
+                pts.sort(key=lambda p: str(p["x"]))
+                sc = float(pts[-1]["y"])
+                lt = "藍燈" if sc <= 16 else "黃藍燈" if sc <= 22 else "綠燈" if sc <= 31 else "黃紅燈" if sc <= 37 else "紅燈"
+                x = str(pts[-1]["x"])
+                return {"value": f"{lt} {sc:g} 分", "score": sc, "date": f"{x[:4]}-{x[4:6]}",
+                        "hist": [[f"{str(p['x'])[:4]}-{str(p['x'])[4:6]}", float(p["y"])] for p in pts[-6:]]}
+        raise RuntimeError("回傳資料裡找不到景氣對策信號分數")
+
+    def light_manual():
+        if not MANUAL.get("景氣燈號"):
+            raise RuntimeError("MANUAL 裡的景氣燈號沒有填")
+        return {"value": MANUAL["景氣燈號"], "date": "手動填寫"}
+    mc["light"] = first_ok("景氣燈號", light_ndc, light_manual)
     return mc
 
 
 def fetch_us_ai_news():
-    r = requests.get("https://news.google.com/rss/search",
-                     params={"q": US_AI_QUERY + " when:3d", "hl": "en-US", "gl": "US", "ceid": "US:en"},
-                     headers=UA, timeout=30)
-    root = ET.fromstring(r.content)
-    out = []
-    for it in root.iter("item"):
-        when = it.findtext("pubDate") or ""
-        try:
-            when = parsedate_to_datetime(when).astimezone(dt.timezone(dt.timedelta(hours=8))).strftime("%m-%d %H:%M")
-        except Exception:
-            pass
-        out.append({"date": when, "title": it.findtext("title") or "",
-                    "source": it.findtext("source") or "", "link": it.findtext("link") or ""})
-        if len(out) >= 8:
-            break
+    out = gnews(US_AI_QUERY + " when:3d", n=8, lang="en")
+    for o in out:
+        o["date"] = o["date"][5:]
     return out
 
 
@@ -485,6 +641,15 @@ def demo_stock(code, name, kind):
         "sbl": {"date": last.date, "bal": 41000, "chg": -800},
         "foreign_ratio": {"date": last.date, "val": 72.31, "chg": 0.05},
     }
+    s["fund"]["div"] = {"ttm": 2.4, "ttm_yield": 3.2, "history": [{"date": f"2026-{m:02d}-15", "amt": 0.6, "before": 70.0, "pct": 0.86} for m in (10, 7, 4, 1)],
+                        "upcoming": [{"ex": "2026-12-18", "cash": 0.65, "pay": "2027-01-15"}]}
+    if kind == "ETF":
+        s["fund"]["holdings"] = {"date": "2026-10-31", "rows": [{"name": n, "code": c, "w": w} for n, c, w in
+                                 [("台積電", "2330", 56.4), ("聯發科", "2454", 6.7), ("台達電", "2308", 3.4), ("鴻海", "2317", 2.9),
+                                  ("日月光投控", "3711", 2.2), ("聯電", "2303", 1.7), ("欣興", "3037", 1.4), ("台光電", "2383", 1.3),
+                                  ("南亞", "1303", 1.2), ("富邦金", "2881", 1.2), ("致茂", "2360", 0.7)]]}
+    else:
+        s["announce"] = [{"date": f"{last.date} 17:30", "title": "（示範）公告本公司董事會決議股利分派", "rule": "第14款", "desc": "（示範）說明文字"}]
     s["news"] = [{"date": f"{last.date} 1{i}:00", "title": f"（示範）{name} 相關新聞標題 {i + 1}",
                   "source": "示範來源", "link": ""} for i in range(5)]
     return s
@@ -493,6 +658,18 @@ def demo_stock(code, name, kind):
 # ---------------------------------------------------------------------
 # 主程式
 # ---------------------------------------------------------------------
+def add_overlap(stocks):
+    """ETF 之間的持股重疊度：共同持股取兩邊權重較小者加總。"""
+    hs = {x["code"]: {r["code"]: r["w"] for r in x["fund"]["holdings"]["rows"]}
+          for x in stocks if (x.get("fund") or {}).get("holdings")}
+    for x in stocks:
+        if x["code"] not in hs:
+            continue
+        a = hs[x["code"]]
+        x["fund"]["overlap"] = [{"code": c, "pct": round(sum(min(a[k], b[k]) for k in a.keys() & b.keys()), 1)}
+                                for c, b in hs.items() if c != x["code"]]
+
+
 def main():
     demo = "--demo" in sys.argv
     data = {"demo": demo, "generated": NOW.strftime("%Y-%m-%d %H:%M"), "stocks": []}
@@ -506,13 +683,17 @@ def main():
                 strat_df = s["_df"]
             s.pop("_df")
             data["stocks"].append(s)
+        add_overlap(data["stocks"])
         data["macro"] = {"twii": {"value": 27850.12, "chg": 152.3, "pct": 0.55, "date": TODAY.isoformat()},
                          "sox": {"value": 7012.4, "chg": -48.2, "pct": -0.68, "date": TODAY.isoformat()},
                          "fx": {"value": 31.42, "chg": -0.05, "pct": -0.16, "date": TODAY.isoformat(),
                                 "series": [round(31.6 + random.gauss(0, .12), 3) for _ in range(30)]},
                          "fed": {"value": "3.75–4.00%", "date": "示範"}, "cpi": {"value": "2.9%", "date": "示範"},
                          "us10y": {"value": 4.12, "chg": 0.03, "date": "示範"},
-                         "light": "黃紅燈 35 分（示範）", "export": "+12.3%（示範）"}
+                         "vix": {"value": 18.42, "chg": 1.35, "pct": 7.91, "date": TODAY.isoformat()},
+                         "nfp": {"value": "+11.9 萬人", "chg_raw": 119, "date": "示範"},
+                         "light": {"value": "黃紅燈 35 分", "score": 35, "date": "示範",
+                                   "hist": [["2026-04", 33], ["2026-05", 34], ["2026-06", 36], ["2026-07", 35], ["2026-08", 37], ["2026-09", 35]]}}
         data["us_ai_news"] = [{"date": "11-11 08:00", "title": f"（示範）美國 AI 資料中心政策新聞 {i + 1}",
                                "source": "示範來源", "link": ""} for i in range(5)]
     else:
@@ -530,9 +711,18 @@ def main():
                 if code == STRATEGY["target"]:
                     strat_df = df
             s["fund"] = fetch_fund(code, kind)
+            s["fund"]["div"] = fetch_dividends(code, s.get("quote", {}).get("close"))
+            if kind == "ETF":
+                s["fund"]["holdings"] = safe(f"{code} ETF 持股", lambda: fetch_holdings(code))
             s["chips"] = fetch_chips(code)
-            s["news"] = fetch_news(code)
+            s["news"] = fetch_news(code, name)
             data["stocks"].append(s)
+        log("抓取重大訊息……")
+        ann = safe("重大訊息", lambda: fetch_announcements({c for c, _, k in STOCKS if k == "個股"}), {}) or {}
+        for s in data["stocks"]:
+            if s["kind"] == "個股":
+                s["announce"] = ann.get(s["code"], [])
+        add_overlap(data["stocks"])
         log("抓取總經與匯率……")
         data["macro"] = fetch_macro()
         log("抓取美國 AI 政策新聞……")
