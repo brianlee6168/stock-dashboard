@@ -64,7 +64,10 @@ US_AI_QUERY = '"data center" AI (Trump OR Democrats OR Congress) policy'
 # AI 解讀（Google Gemini 免費 API）。金鑰放在 GitHub Secrets 的 GEMINI_API_KEY；
 # 在自己電腦跑可以把金鑰貼在最後的引號裡。沒有金鑰時只顯示規則整理。
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or ""
-GEMINI_MODELS = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]  # 依序嘗試
+# 依你的免費額度排序：Flash Lite 系列每天 500 次，最適合；Gemma 4 額度也大；2.5 Flash 每天只有 20 次放最後。
+# 程式會先向 Google 查詢你的金鑰實際能用的模型名稱，再依這個順序挑選。
+GEMINI_PREFER = ["3.5-flash-lite", "3.1-flash-lite", "gemma-4-31b", "gemma-4-26b", "2.5-flash-lite", "2.5-flash"]
+GEMINI_MODELS = []   # 執行時自動填入
 
 OUTPUT = "dashboard.html"
 
@@ -900,6 +903,44 @@ def build_analysis(s, macro, strategy):
     return A
 
 
+def pick_gemini_models():
+    """查詢這把金鑰能用的模型，依 GEMINI_PREFER 排出最多 3 個。"""
+    names = []
+    url = "https://generativelanguage.googleapis.com/v1beta/models"
+    token = None
+    for _ in range(5):
+        r = requests.get(url, headers={"x-goog-api-key": GEMINI_API_KEY},
+                         params={"pageSize": 1000, **({"pageToken": token} if token else {})}, timeout=30)
+        if r.status_code != 200:
+            try:
+                msg = r.json().get("error", {}).get("message", "")
+            except Exception:
+                msg = r.text
+            raise RuntimeError(f"查詢模型清單失敗 HTTP {r.status_code}：{msg[:200]}")
+        j = r.json()
+        for m in j.get("models", []):
+            if "generateContent" in (m.get("supportedGenerationMethods") or []):
+                names.append(m["name"].split("/", 1)[-1])
+        token = j.get("nextPageToken")
+        if not token:
+            break
+    picked = []
+    for key in GEMINI_PREFER:
+        cands = [n for n in names if key in n and not any(x in n for x in ("tts", "image", "audio", "live", "embedding"))]
+        if key == "2.5-flash":
+            cands = [n for n in cands if "lite" not in n]
+        cands.sort(key=lambda n: ("preview" in n or "exp" in n, len(n)))   # 正式版、名字短的優先
+        for n in cands:
+            if n not in picked:
+                picked.append(n)
+                break
+        if len(picked) >= 3:
+            break
+    if not picked:
+        raise RuntimeError("金鑰可用的模型裡找不到合適的文字模型：" + ", ".join(names[:15]))
+    return picked
+
+
 def ai_comment(s, A):
     """把規則整理的重點送給 Gemini，請它寫成一段白話解讀。失敗回傳 None。"""
     if not GEMINI_API_KEY:
@@ -922,12 +963,22 @@ def ai_comment(s, A):
             r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                               headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
                               json=body, timeout=60)
-            if r.status_code in (404, 400):
-                errs.append(f"{model} HTTP {r.status_code}")
-                continue
-            if r.status_code == 429:
-                errs.append(f"{model} 超過免費額度")
-                continue
+            if r.status_code != 200:
+                try:
+                    msg = r.json().get("error", {}).get("message", "")
+                except Exception:
+                    msg = r.text
+                msg = re.sub(r"\s+", " ", msg)[:220]
+                errs.append(f"{model} HTTP {r.status_code}：{msg}")
+                if r.status_code == 429 and "limit: 0" not in msg and model == GEMINI_MODELS[-1]:
+                    time.sleep(20)  # 每分鐘次數超過時，等一下再試最後一次
+                    r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                                      headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
+                                      json=body, timeout=60)
+                    if r.status_code != 200:
+                        continue
+                else:
+                    continue
             r.raise_for_status()
             parts = r.json()["candidates"][0]["content"]["parts"]
             text = "".join(p.get("text", "") for p in parts).strip()
@@ -942,13 +993,22 @@ def ai_comment(s, A):
 
 
 def add_analysis(data):
+    global GEMINI_API_KEY
+    if GEMINI_API_KEY and not data.get("demo"):
+        models = safe("Gemini 模型清單", pick_gemini_models)
+        if models:
+            GEMINI_MODELS[:] = models
+            log("  AI 模型：" + "、".join(models))
+        else:
+            GEMINI_API_KEY = ""   # 查不到模型就不呼叫 AI，只顯示規則整理
+            data["ai_error"] = True
     for i, s in enumerate(data["stocks"]):
         s["analysis"] = build_analysis(s, data.get("macro") or {}, data.get("strategy") or {})
         if not data.get("demo"):
             s["ai"] = ai_comment(s, s["analysis"])
             if GEMINI_API_KEY and i < len(data["stocks"]) - 1:
                 time.sleep(4)   # 免費額度有每分鐘次數限制，間隔幾秒
-    data["ai_enabled"] = bool(GEMINI_API_KEY)
+    data["ai_enabled"] = bool(GEMINI_API_KEY) or bool(data.get("ai_error"))
 
 
 def add_overlap(stocks):
