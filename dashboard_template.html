@@ -57,6 +57,11 @@ ul.news li small{color:var(--mute);margin-left:6px}
 ul.news summary{cursor:pointer}
 ul.news a{color:var(--ink)}
 .empty{color:var(--mute);font-size:14px}
+ul.pts{list-style:none;padding:0;margin:0 0 6px}
+ul.pts li{padding:5px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:baseline}
+.big2{font-size:16px;font-weight:700;margin:4px 0 6px}
+.ai{line-height:1.8;background:var(--sel);border-radius:6px;padding:12px 14px}
+.tabs{overflow-x:auto}.tabs button{white-space:nowrap}
 .big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
 @media (max-width:760px){.wrap{grid-template-columns:1fr}nav{display:flex;overflow-x:auto}nav button{flex:0 0 auto;width:auto;gap:8px}nav hr{display:none}.grid2{grid-template-columns:1fr}}
 </style>
@@ -70,7 +75,7 @@ ul.news a{color:var(--ink)}
 </main>
 <script>
 const D = __DATA__;
-const TABS = ["基本面","技術面","消息面","籌碼面"];
+const TABS = ["基本面","技術面","消息面","籌碼面","綜合分析"];
 let cur = 0, tab = 0;
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -311,6 +316,26 @@ function pStrategy() {
 }
 
 /* ---------- 版面 ---------- */
+function pAnalysis(s) {
+  const A = s.analysis || {};
+  const icon = {up: ["▲", "var(--up)", "偏強"], down: ["▼", "var(--down)", "偏弱"], mid: ["●", "var(--mute)", "中性"]};
+  const list = (k, title, note) => (A[k] && A[k].length) ? `<h3>${title}</h3>${note ? `<p class="tip">${note}</p>` : ""}<ul class="pts">${
+    A[k].map(x => `<li><span title="${icon[x.tone][2]}" style="color:${icon[x.tone][1]}">${icon[x.tone][0]}</span>${esc(x.text)}</li>`).join("")}</ul>` : "";
+  let h = `<section><h2>綜合分析</h2><p class="tip">把四個面向的數字整理成白話重點。▲ 偏強、▼ 偏弱、● 中性，只描述現況，不代表買賣建議，也不能預測明天。</p>
+    <p class="big2">${esc(A.summary ?? "")}</p>
+    ${list("strategy", "和你的策略")}
+    ${list("tech", "技術面")}${list("chips", "籌碼面")}${list("fund", "基本面")}${list("news", "消息面")}
+    ${list("macro", "總經背景", "每一檔都相同。")}
+    ${src("規則整理：由程式依固定規則產生，每次結果一致")}</section>`;
+  if (s.ai?.text) {
+    h += `<section><h2>AI 解讀</h2><div class="ai">${esc(s.ai.text).replace(/\n+/g, "<br><br>")}</div>
+      ${src(`由 Google Gemini（${esc(s.ai.model)}）根據上方數據自動撰寫，可能有誤或遺漏，請以實際數據為準。不構成投資建議。`)}</section>`;
+  } else if (D.ai_enabled) {
+    h += `<section><h2>AI 解讀</h2><p class="empty">這次 AI 解讀沒有產生成功（可能超過免費額度），請以上方規則整理為準。</p></section>`;
+  }
+  return h;
+}
+
 function render() {
   const v = document.getElementById("view");
   if (cur === -1) { v.innerHTML = pStrategy(); return; }
@@ -319,7 +344,7 @@ function render() {
     <span class="px ${cl(q.chg)}">${f(q.close)}</span><span class="${cl(q.chg)}">${sg(q.chg)}（${isNum(q.pct) ? sg(q.pct) + "%" : "—"}）</span>
     <span class="m">${esc(q.date ?? "")}</span></div>
     <div class="tabs" role="tablist">${TABS.map((t, i) => `<button role="tab" aria-selected="${i === tab}" data-t="${i}">${t}</button>`).join("")}</div>
-    ${[pFund, pTech, pNews, pChips][tab](s)}`;
+    ${[pFund, pTech, pNews, pChips, pAnalysis][tab](s)}`;
   v.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { tab = +b.dataset.t; render(); });
 }
 function renderNav() {

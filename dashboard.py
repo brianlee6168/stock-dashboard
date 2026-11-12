@@ -61,6 +61,11 @@ STRATEGY = {
 # 美國 AI 政策新聞的搜尋關鍵字（Google 新聞）
 US_AI_QUERY = '"data center" AI (Trump OR Democrats OR Congress) policy'
 
+# AI 解讀（Google Gemini 免費 API）。金鑰放在 GitHub Secrets 的 GEMINI_API_KEY；
+# 在自己電腦跑可以把金鑰貼在最後的引號裡。沒有金鑰時只顯示規則整理。
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or ""
+GEMINI_MODELS = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]  # 依序嘗試
+
 OUTPUT = "dashboard.html"
 
 # =====================================================================
@@ -721,6 +726,231 @@ def demo_stock(code, name, kind):
 # ---------------------------------------------------------------------
 # 主程式
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# 綜合分析：規則整理
+# ---------------------------------------------------------------------
+def _last(a, k=1):
+    vals = [v for v in (a or []) if v is not None]
+    return vals[-k] if len(vals) >= k else None
+
+
+def build_analysis(s, macro, strategy):
+    """把各面向的數字整理成白話重點。tone: up 偏強、down 偏弱、mid 中性。只描述現況，不做預測。"""
+    A = {"tech": [], "chips": [], "fund": [], "news": [], "macro": [], "strategy": []}
+    add = lambda k, tone, text: A[k].append({"tone": tone, "text": text})
+    t, q = s.get("tech") or {}, s.get("quote") or {}
+    c = q.get("close")
+
+    # ---- 技術面 ----
+    if t.get("ohlc") and c:
+        ma20, ma60, ma5 = _last(t["ma20"]), _last(t["ma60"]), _last(t["ma5"])
+        if ma20:
+            add("tech", "up" if c >= ma20 else "down",
+                f"收盤 {c:g} 在 20 日均線（{ma20:g}）之{'上' if c >= ma20 else '下'}，差距 {(c / ma20 - 1) * 100:+.1f}%。")
+        if ma60:
+            add("tech", "up" if c >= ma60 else "down", f"收盤在 60 日均線（{ma60:g}）之{'上' if c >= ma60 else '下'}。")
+        m5, m20 = [v for v in t["ma5"][-4:]], [v for v in t["ma20"][-4:]]
+        if all(v is not None for v in m5 + m20):
+            if m5[0] < m20[0] and m5[-1] >= m20[-1]:
+                add("tech", "up", "近 3 日 5 日均線由下往上穿過 20 日均線（黃金交叉）。")
+            elif m5[0] > m20[0] and m5[-1] <= m20[-1]:
+                add("tech", "down", "近 3 日 5 日均線由上往下穿過 20 日均線（死亡交叉）。")
+        k, d, k0, d0 = _last(t["k"]), _last(t["d"]), _last(t["k"], 2), _last(t["d"], 2)
+        if k is not None and d is not None:
+            zone = "高檔區（80 以上）" if k >= 80 else "低檔區（20 以下）" if k <= 20 else "中間區"
+            cross = ""
+            if k0 is not None and d0 is not None:
+                if k0 < d0 and k >= d:
+                    cross = "，今天 K 向上穿過 D（黃金交叉）"
+                elif k0 > d0 and k <= d:
+                    cross = "，今天 K 向下穿過 D（死亡交叉）"
+            add("tech", "up" if k >= d else "down", f"KD 為 {k:.0f} / {d:.0f}，位於{zone}{cross}。")
+        r = _last(t["rsi"])
+        if r is not None:
+            add("tech", "mid" if 30 < r < 70 else ("up" if r >= 70 else "down"),
+                f"RSI {r:.0f}，" + ("超過 70，屬短線偏熱區。" if r >= 70 else "低於 30，屬短線偏冷區。" if r <= 30 else "在 30–70 的中間區。"))
+        o1, o0 = _last(t["osc"]), _last(t["osc"], 2)
+        if o1 is not None and o0 is not None:
+            side = "0 軸上方" if o1 >= 0 else "0 軸下方"
+            trend = "變長" if abs(o1) > abs(o0) else "縮短"
+            add("tech", "up" if o1 >= 0 else "down", f"MACD 柱狀體在{side}且{trend}，代表{'多' if o1 >= 0 else '空'}方動能{'增強' if trend == '變長' else '減弱'}。")
+        bu, bl = _last(t["bbu"]), _last(t["bbl"])
+        if bu and bl:
+            if c > bu:
+                add("tech", "up", f"收盤高於布林上軌（{bu:g}），短線漲幅較大。")
+            elif c < bl:
+                add("tech", "down", f"收盤低於布林下軌（{bl:g}），短線跌幅較大。")
+            widths = [(u - l) / m for u, l, m in zip(t["bbu"], t["bbl"], t["ma20"]) if u and l and m]
+            if len(widths) > 40 and widths[-1] <= min(widths[-120:]) * 1.05:
+                add("tech", "mid", "布林通道寬度接近近期最窄，代表波動收斂，之後波動可能放大（方向不確定）。")
+        vols = [r[5] for r in t["ohlc"][-21:] if r[5]]
+        if len(vols) >= 21:
+            ratio = vols[-1] / (sum(vols[:-1]) / 20)
+            if ratio >= 1.5 or ratio <= 0.6:
+                add("tech", "mid", f"今日成交量是近 20 日均量的 {ratio:.1f} 倍，{'明顯放量' if ratio >= 1.5 else '明顯量縮'}。")
+        closes = [r[4] for r in t["ohlc"]]
+        if len(closes) > 20:
+            chg20 = (closes[-1] / closes[-21] - 1) * 100
+            add("tech", "up" if chg20 >= 0 else "down", f"近 20 個交易日漲跌 {chg20:+.1f}%。")
+
+    # ---- 籌碼面 ----
+    ch = s.get("chips") or {}
+    ins = ch.get("inst")
+    if ins:
+        f10 = [v for _, v in ins.get("foreign10", []) if v is not None]
+        if f10:
+            sign = 1 if f10[-1] > 0 else -1 if f10[-1] < 0 else 0
+            streak = 0
+            for v in reversed(f10):
+                if sign and (v > 0) == (sign > 0) and v != 0:
+                    streak += 1
+                else:
+                    break
+            tot = sum(f10)
+            if sign:
+                add("chips", "up" if sign > 0 else "down", f"外資連續 {streak} 日{'買超' if sign > 0 else '賣超'}，近 {len(f10)} 日合計{'買' if tot >= 0 else '賣'}超 {abs(tot):,.0f} 張。")
+        it = next((r for r in ins.get("rows", []) if r["name"] == "投信"), None)
+        if it and it.get("net"):
+            add("chips", "up" if it["net"] > 0 else "down", f"投信今日{'買' if it['net'] > 0 else '賣'}超 {abs(it['net']):,.0f} 張。")
+    m = ch.get("margin")
+    if m and m.get("mb"):
+        pct = m["mb_chg"] / (m["mb"] - m["mb_chg"]) * 100 if m["mb"] != m["mb_chg"] else 0
+        if abs(pct) >= 1:
+            add("chips", "mid", f"融資餘額{'增加' if pct > 0 else '減少'} {abs(pct):.1f}%（{m['mb_chg']:+,.0f} 張），散戶槓桿部位{'上升' if pct > 0 else '下降'}。")
+        if m.get("ratio") and m["ratio"] >= 20:
+            add("chips", "mid", f"券資比 {m['ratio']:.1f}%，放空比例偏高。")
+    b = ch.get("sbl")
+    if b and b.get("chg"):
+        add("chips", "down" if b["chg"] > 0 else "up", f"借券賣出餘額{'增加' if b['chg'] > 0 else '減少'} {abs(b['chg']):,.0f} 張。")
+    fr = ch.get("foreign_ratio")
+    if fr and fr.get("val") is not None:
+        add("chips", "mid", f"外資持股比例 {fr['val']:.2f}%" + (f"（{fr['chg']:+.2f}）" if fr.get("chg") else "") + "。")
+
+    # ---- 基本面 ----
+    fu = s.get("fund") or {}
+    dv = fu.get("div") or {}
+    if s["kind"] == "個股":
+        rev = fu.get("revenue") or []
+        if rev and rev[0].get("yoy") is not None:
+            y = rev[0]["yoy"]
+            n = 0
+            for r in rev:
+                if r.get("yoy") is not None and (r["yoy"] > 0) == (y > 0):
+                    n += 1
+                else:
+                    break
+            add("fund", "up" if y > 0 else "down", f"{rev[0]['ym']} 月營收年增 {y:+.1f}%，已連續 {n} 個月{'成長' if y > 0 else '衰退'}（表內最多 6 個月）。")
+        per = (fu.get("per") or {}).get("per")
+        if per:
+            add("fund", "mid", f"本益比 {per:g} 倍。")
+        qs = fu.get("quarters") or []
+        if len(qs) >= 2 and qs[0].get("gm") is not None and qs[1].get("gm") is not None:
+            dg = qs[0]["gm"] - qs[1]["gm"]
+            add("fund", "up" if dg >= 0 else "down", f"最新一季毛利率 {qs[0]['gm']:.1f}%，比前一季{'增加' if dg >= 0 else '減少'} {abs(dg):.1f} 個百分點。")
+    else:
+        if dv.get("ttm_yield") is not None:
+            add("fund", "mid", f"近 12 個月殖利率 {dv['ttm_yield']:.2f}%（配息合計 {dv.get('ttm', 0):g} 元）。")
+        rows = (fu.get("holdings") or {}).get("rows") or []
+        if rows:
+            top5 = sum(r["w"] for r in rows[:5])
+            add("fund", "mid", f"前五大持股合計 {top5:.1f}%，最大持股 {rows[0]['name']} 占 {rows[0]['w']:.1f}%。")
+            if rows[0]["w"] >= 40:
+                add("fund", "down", f"單一持股超過 40%，走勢高度受 {rows[0]['name']} 影響。")
+        ov = sorted(fu.get("overlap") or [], key=lambda x: -x["pct"])
+        if ov and ov[0]["pct"] >= 30:
+            add("fund", "mid", f"和 {ov[0]['code']} 的持股重疊度 {ov[0]['pct']:.0f}%，兩檔分散效果有限。")
+    for u in dv.get("upcoming") or []:
+        days = (dt.date.fromisoformat(u["ex"]) - TODAY).days
+        if 0 <= days <= 30:
+            add("fund", "mid", f"{u['ex']} 除息（{days} 天後），每單位 {u['cash']:g} 元；除息日股價會機械性下調，計算策略高點時要留意。")
+
+    # ---- 消息面 ----
+    if s.get("announce"):
+        add("news", "mid", f"最近一個交易日有 {len(s['announce'])} 則重大訊息：" + "；".join(a["title"][:30] for a in s["announce"][:2]) + "。")
+    n = len(s.get("news") or [])
+    add("news", "mid", f"近 3 天有 {n} 則相關新聞（標題見消息面）。" if n else "近 3 天沒有找到相關新聞。")
+
+    # ---- 總經背景（每檔相同）----
+    v = (macro.get("vix") or {}).get("value")
+    if v is not None:
+        add("macro", "down" if v >= 30 else "mid" if v >= 20 else "up",
+            f"VIX {v:.1f}，" + ("30 以上，市場明顯恐慌。" if v >= 30 else "20–30 之間，市場偏緊張。" if v >= 20 else "20 以下，市場相對平靜。"))
+    u10 = (macro.get("us10y") or {}).get("value")
+    if u10 is not None:
+        add("macro", "down" if u10 >= 4.8 else "mid", f"美債 10 年殖利率 {u10:.2f}%" + ("，處於偏高水準，對股票評價較不利。" if u10 >= 4.8 else "。"))
+    lt = macro.get("light")
+    if isinstance(lt, dict) and lt.get("score") is not None:
+        add("macro", "up" if lt["score"] >= 32 else "down" if lt["score"] <= 22 else "mid", f"台灣景氣燈號 {lt['value']}（{lt['date']}）。")
+    fx = macro.get("fx")
+    if fx and fx.get("series"):
+        ser = [x for x in fx["series"] if x]
+        if len(ser) > 5:
+            ch30 = (ser[-1] / ser[0] - 1) * 100
+            add("macro", "mid", f"新台幣近 30 天{'貶值' if ch30 > 0 else '升值'} {abs(ch30):.1f}%（USD/TWD {ser[-1]:.2f}）。")
+
+    # ---- 策略連動 ----
+    if s["code"] == strategy.get("target") and strategy.get("trigger"):
+        g = strategy.get("gap_pct")
+        add("strategy", "mid", f"收盤距離加碼觸發價 {strategy['trigger']:g}：{g:+.2f}%。" +
+            ("已低於觸發價，依你的策略隔天 13:00 對照即時價判斷。" if g is not None and g <= 0 else ""))
+
+    up = sum(1 for k in ("tech", "chips") for x in A[k] if x["tone"] == "up")
+    dn = sum(1 for k in ("tech", "chips") for x in A[k] if x["tone"] == "down")
+    A["summary"] = f"技術面與籌碼面共 {up} 項偏強、{dn} 項偏弱。"
+    return A
+
+
+def ai_comment(s, A):
+    """把規則整理的重點送給 Gemini，請它寫成一段白話解讀。失敗回傳 None。"""
+    if not GEMINI_API_KEY:
+        return None
+    facts = {k: [x["text"] for x in A[k]] for k in ("tech", "chips", "fund", "news", "macro", "strategy")}
+    prompt = (
+        "你是協助長期投資人閱讀資料的助理。以下是台股標的 "
+        f"{s['code']} {s['name']}（{s['kind']}）今天整理好的客觀數據，JSON 格式：\n"
+        + json.dumps(facts, ensure_ascii=False) +
+        "\n\n請用繁體中文寫 150 到 250 字的白話解讀，分成三小段，每段開頭用「整體：」「值得留意：」「對長期投資的意義：」。"
+        "規則：只能根據上面的資料，不可加入資料以外的事實或新聞；不預測明天或未來漲跌；"
+        "不給買進、賣出、加碼、減碼建議，也不提目標價；資料不足就直接說資料不足。"
+        "這位投資人採定期定額加回檔加碼的長期策略，分析目的是確認有沒有結構性風險，不是短線進出。只輸出文字，不要用 Markdown 符號。"
+    )
+    body = {"contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2048}}
+    errs = []
+    for model in GEMINI_MODELS:
+        try:
+            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                              headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
+                              json=body, timeout=60)
+            if r.status_code in (404, 400):
+                errs.append(f"{model} HTTP {r.status_code}")
+                continue
+            if r.status_code == 429:
+                errs.append(f"{model} 超過免費額度")
+                continue
+            r.raise_for_status()
+            parts = r.json()["candidates"][0]["content"]["parts"]
+            text = "".join(p.get("text", "") for p in parts).strip()
+            text = re.sub(r"[*#`]+", "", text)
+            if text:
+                return {"text": text, "model": model}
+        except Exception as e:
+            errs.append(f"{model} {str(e)[:60]}")
+    WARN.append(f"{s['code']} AI 解讀：" + "；".join(errs))
+    log(f"  ⚠ {s['code']} AI 解讀失敗：" + "；".join(errs))
+    return None
+
+
+def add_analysis(data):
+    for i, s in enumerate(data["stocks"]):
+        s["analysis"] = build_analysis(s, data.get("macro") or {}, data.get("strategy") or {})
+        if not data.get("demo"):
+            s["ai"] = ai_comment(s, s["analysis"])
+            if GEMINI_API_KEY and i < len(data["stocks"]) - 1:
+                time.sleep(4)   # 免費額度有每分鐘次數限制，間隔幾秒
+    data["ai_enabled"] = bool(GEMINI_API_KEY)
+
+
 def add_overlap(stocks):
     """ETF 之間的持股重疊度：共同持股取兩邊權重較小者加總。"""
     hs = {x["code"]: {r["code"]: r["w"] for r in x["fund"]["holdings"]["rows"]}
@@ -792,6 +1022,12 @@ def main():
         data["us_ai_news"] = safe("美國 AI 新聞", fetch_us_ai_news, [])
 
     data["strategy"] = build_strategy(strat_df)
+    log("整理綜合分析……" + ("（含 AI 解讀）" if GEMINI_API_KEY and not demo else ""))
+    add_analysis(data)
+    if demo:
+        for s in data["stocks"]:
+            s["ai"] = {"model": "示範", "text": "整體：（示範）這是 AI 解讀的示範文字，實際內容會由 Gemini 根據上方規則整理的數據撰寫。\n值得留意：（示範）……\n對長期投資的意義：（示範）……"}
+        data["ai_enabled"] = True
     data["warnings"] = WARN
 
     here = os.path.dirname(os.path.abspath(__file__))
