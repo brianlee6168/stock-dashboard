@@ -941,6 +941,63 @@ def pick_gemini_models():
     return picked
 
 
+# ---------------------------------------------------------------------
+# AI 文字的保險：把中文數字轉成阿拉伯數字
+# ---------------------------------------------------------------------
+_CN_D = {"零": 0, "〇": 0, "一": 1, "二": 2, "兩": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_CN_U = {"十": 10, "百": 100, "千": 1000}
+_CN_NUM = "[零〇一二兩三四五六七八九十百千萬]+(?:點[零〇一二三四五六七八九]+)?"
+_CN_UNITS = "個百分點|個交易日|個月|日|天|月|年|季|分|倍|張|元|億|檔|次|項|成|週|周"
+
+
+def cn2num(t):
+    """中文數字字串 → 數字；例如 二十 → 20、五十七點三 → 57.3、二〇二六 → 2026。"""
+    dec = None
+    if "點" in t:
+        t, dec = t.split("點", 1)
+    if t and all(c in _CN_D for c in t):            # 像 二〇二六 這種逐位數字
+        val = int("".join(str(_CN_D[c]) for c in t))
+    else:
+        total = section = n = 0
+        for c in t:
+            if c in _CN_D:
+                n = _CN_D[c]
+            elif c in _CN_U:
+                section += (n or 1) * _CN_U[c]
+                n = 0
+            elif c == "萬":
+                total += (section + n) * 10000
+                section = n = 0
+        val = total + section + n
+    if dec:
+        return float(f"{val}.{''.join(str(_CN_D[c]) for c in dec)}")
+    return val
+
+
+def _fmt(v):
+    return f"{v:g}" if isinstance(v, float) else str(v)
+
+
+def arabic_numbers(text):
+    # 負百分之六點五 → -6.5%
+    text = re.sub(rf"(負)?百分之({_CN_NUM})",
+                  lambda m: ("-" if m.group(1) else "") + _fmt(cn2num(m.group(2))) + "%", text)
+
+    # 二十日均線 → 20 日均線；六成 → 60%
+    def unit_sub(m):
+        n, u = m.group(1), m.group(2)
+        if (n == "十" and u == "分") or (n == "一" and u in ("次", "項", "分")):   # 「十分強勁」「一次」等慣用語不轉
+            return m.group(0)
+        v = cn2num(n)
+        if u == "成":
+            return _fmt(v * 10) + "%"
+        return f"{_fmt(v)} {u}"
+    text = re.sub(rf"({_CN_NUM})({_CN_UNITS})", unit_sub, text)
+    text = text.replace("零軸", "0 軸")
+    text = re.sub(r"(\d) (\d)", r"\1\2", text)
+    return text
+
+
 def ai_comment(s, A):
     """把規則整理的重點送給 Gemini，請它寫成一段白話解讀。失敗回傳 None。"""
     if not GEMINI_API_KEY:
@@ -953,6 +1010,8 @@ def ai_comment(s, A):
         "\n\n請用繁體中文寫 150 到 250 字的白話解讀，分成三小段，每段開頭用「整體：」「值得留意：」「對長期投資的意義：」。"
         "規則：只能根據上面的資料，不可加入資料以外的事實或新聞；不預測明天或未來漲跌；"
         "不給買進、賣出、加碼、減碼建議，也不提目標價；資料不足就直接說資料不足。"
+        "數字一律用阿拉伯數字，並照資料原樣寫出，例如寫「20 日均線」「-6.0%」「年增 57.3%」「41 分」，"
+        "不要改寫成中文數字（如二十日、百分之六），也不要改成「近六成」這類約略說法；提到某個指標時要附上它的數值。"
         "這位投資人採定期定額加回檔加碼的長期策略，分析目的是確認有沒有結構性風險，不是短線進出。只輸出文字，不要用 Markdown 符號。"
     )
     body = {"contents": [{"parts": [{"text": prompt}]}],
@@ -982,7 +1041,7 @@ def ai_comment(s, A):
             r.raise_for_status()
             parts = r.json()["candidates"][0]["content"]["parts"]
             text = "".join(p.get("text", "") for p in parts).strip()
-            text = re.sub(r"[*#`]+", "", text)
+            text = arabic_numbers(re.sub(r"[*#`]+", "", text))
             if text:
                 return {"text": text, "model": model}
         except Exception as e:

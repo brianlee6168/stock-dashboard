@@ -328,10 +328,10 @@ function pAnalysis(s) {
     ${list("macro", "總經背景", "每一檔都相同。")}
     ${src("規則整理：由程式依固定規則產生，每次結果一致")}</section>`;
   if (s.ai?.text) {
-    h += `<section><h2>AI 解讀</h2><div class="ai">${esc(s.ai.text).replace(/\n+/g, "<br><br>")}</div>
+    h += `<section><h2>AI 解讀 <small style="color:var(--mute);font-weight:500;font-size:13px">（僅參考）</small></h2><div class="ai">${esc(s.ai.text).replace(/\n+/g, "<br><br>")}</div>
       ${src(`由 Google Gemini（${esc(s.ai.model)}）根據上方數據自動撰寫，可能有誤或遺漏，請以實際數據為準。不構成投資建議。`)}</section>`;
   } else if (D.ai_enabled) {
-    h += `<section><h2>AI 解讀</h2><p class="empty">這次 AI 解讀沒有產生成功（可能超過免費額度），請以上方規則整理為準。</p></section>`;
+    h += `<section><h2>AI 解讀 <small style="color:var(--mute);font-weight:500;font-size:13px">（僅參考）</small></h2><p class="empty">這次 AI 解讀沒有產生成功（可能超過免費額度），請以上方規則整理為準。</p></section>`;
   }
   return h;
 }
