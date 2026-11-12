@@ -443,6 +443,19 @@ def fred(series_id):
     return df.dropna()
 
 
+def parse_ndc(j):
+    """國發會 JSON：line 裡找「景氣對策信號」且單位是分數的那一條。"""
+    for ser in (j or {}).get("line", {}).values():
+        if ser.get("name") == "景氣對策信號" and "分" in (ser.get("unit") or ""):
+            pts = sorted([p for p in ser.get("data", []) if p.get("y") is not None], key=lambda p: str(p["x"]))
+            sc = float(pts[-1]["y"])
+            lt = "藍燈" if sc <= 16 else "黃藍燈" if sc <= 22 else "綠燈" if sc <= 31 else "黃紅燈" if sc <= 37 else "紅燈"
+            x = str(pts[-1]["x"])
+            return {"value": f"{lt} {sc:g} 分", "score": sc, "date": f"{x[:4]}-{x[4:6]}",
+                    "hist": [[f"{str(p['x'])[:4]}-{str(p['x'])[4:6]}", float(p["y"])] for p in pts[-6:]]}
+    raise RuntimeError("回傳資料裡找不到景氣對策信號分數")
+
+
 def fetch_macro():
     mc = {}
     mc["twii"] = safe("加權指數", lambda: last_change(yf_hist("^TWII")))
@@ -537,32 +550,82 @@ def fetch_macro():
     mc["nfp"] = first_ok("非農就業", nfp_fred, nfp_bls, lambda: nfp_bls("v1"), nfp_manual)
 
     def light_ndc():
-        page = "https://index.ndc.gov.tw/n/zh_tw/data/eco"
-        ss = requests.Session()
-        ss.headers.update({**UA, "Referer": page})
-        html = ss.get(page, timeout=30).text
-        m = re.search(r'name="csrf-token" content="([^"]+)"', html)
-        if not m:
-            raise RuntimeError("國發會網頁找不到 csrf-token")
-        ss.headers.update({"X-CSRF-TOKEN": m.group(1), "X-Requested-With": "XMLHttpRequest"})
-        r = ss.post("https://index.ndc.gov.tw/n/json/data/eco/indicators", timeout=60)
-        r.raise_for_status()
-        for ser in r.json().get("line", {}).values():
-            if ser.get("name") == "景氣對策信號" and "分" in (ser.get("unit") or ""):
-                pts = [p for p in ser.get("data", []) if p.get("y") is not None]
-                pts.sort(key=lambda p: str(p["x"]))
-                sc = float(pts[-1]["y"])
-                lt = "藍燈" if sc <= 16 else "黃藍燈" if sc <= 22 else "綠燈" if sc <= 31 else "黃紅燈" if sc <= 37 else "紅燈"
-                x = str(pts[-1]["x"])
-                return {"value": f"{lt} {sc:g} 分", "score": sc, "date": f"{x[:4]}-{x[4:6]}",
-                        "hist": [[f"{str(p['x'])[:4]}-{str(p['x'])[4:6]}", float(p["y"])] for p in pts[-6:]]}
-        raise RuntimeError("回傳資料裡找不到景氣對策信號分數")
+        from urllib.parse import unquote
+        base = "https://index.ndc.gov.tw"
+        api = base + "/n/json/data/eco/indicators"
+        pages = [base + "/n/zh_tw/data/eco", base + "/n/zh_tw/data/eco/signal", base + "/n/zh_tw"]
+        errs = []
+        for page in pages:
+            ss = requests.Session()
+            ss.headers.update({**UA, "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+                               "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8"})
+            try:
+                r = ss.get(page, timeout=30)
+            except Exception as e:
+                errs.append(f"{page[len(base):]} 連線失敗 {str(e)[:60]}")
+                continue
+            if r.status_code != 200:
+                errs.append(f"{page[len(base):]} HTTP {r.status_code}")
+                continue
+            html = r.text
+            m = (re.search(r'<meta[^>]*name=["\']csrf-token["\'][^>]*content=["\']([^"\']+)', html)
+                 or re.search(r'<meta[^>]*content=["\']([^"\']+)["\'][^>]*name=["\']csrf-token', html)
+                 or re.search(r'csrf[-_]?token["\']?\s*[:=]\s*["\']([A-Za-z0-9+/=_-]{20,})', html, re.I))
+            xsrf = ss.cookies.get("XSRF-TOKEN")
+            if not m and not xsrf:
+                head = re.sub(r"\s+", " ", html[:120])
+                errs.append(f"{page[len(base):]} 沒有 token（{len(html)} 字，開頭：{head}）")
+                continue
+            hdr = {"X-Requested-With": "XMLHttpRequest", "Accept": "application/json, text/plain, */*",
+                   "Referer": page, "Origin": base}
+            if m:
+                hdr["X-CSRF-TOKEN"] = m.group(1)
+            if xsrf:
+                hdr["X-XSRF-TOKEN"] = unquote(xsrf)
+            resp = ss.post(api, headers=hdr, timeout=60)
+            if resp.status_code != 200:
+                errs.append(f"POST HTTP {resp.status_code}")
+                continue
+            try:
+                return parse_ndc(resp.json())
+            except Exception as e:
+                errs.append(str(e))
+        raise RuntimeError("國發會：" + "；".join(errs))
+
+    def light_browser():
+        """用真的瀏覽器打開國發會網頁，攔截網頁自己去要的資料。需要先安裝 playwright。"""
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            raise RuntimeError("沒有安裝 playwright（GitHub Actions 會自動安裝；自己電腦要用請看說明）")
+        got = []
+        with sync_playwright() as pw:
+            b = pw.chromium.launch()
+            pg = b.new_page(locale="zh-TW", user_agent=UA["User-Agent"])
+
+            def on_resp(r):
+                if "/n/json/data/eco/indicators" in r.url and r.status == 200:
+                    try:
+                        got.append(r.json())
+                    except Exception:
+                        pass
+            pg.on("response", on_resp)
+            pg.goto("https://index.ndc.gov.tw/n/zh_tw/data/eco", wait_until="domcontentloaded", timeout=60000)
+            for _ in range(40):
+                if got:
+                    break
+                pg.wait_for_timeout(500)
+            title = pg.title()
+            b.close()
+        if not got:
+            raise RuntimeError(f"瀏覽器打開了國發會網頁，但沒有等到資料（網頁標題：{title}）")
+        return parse_ndc(got[0])
 
     def light_manual():
         if not MANUAL.get("景氣燈號"):
             raise RuntimeError("MANUAL 裡的景氣燈號沒有填")
         return {"value": MANUAL["景氣燈號"], "date": "手動填寫"}
-    mc["light"] = first_ok("景氣燈號", light_ndc, light_manual)
+    mc["light"] = first_ok("景氣燈號", light_ndc, light_browser, light_manual)
     return mc
 
 
