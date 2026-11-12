@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-選股分析儀表板：抓資料，產生 dashboard.html
+選股分析：抓資料，產生 dashboard.html
 
 用法：
     python dashboard.py            抓真實資料，產生 dashboard.html 並自動打開
@@ -60,6 +60,18 @@ STRATEGY = {
     "gap_reset_days": 20,        # 上一批成交後滿 20 個交易日都沒觸發，參考價改回 H
 }
 
+# 「我的策略」帳號登入（Firebase）。把 Firebase 網頁設定貼進來就會啟用；留空則維持存在瀏覽器裡的方式。
+# 這些設定本來就是公開的（網頁一定要讀得到），安全性靠 Firestore 安全規則控管，可以放在公開 repo。
+FIREBASE = {
+    "apiKey": "",
+    "authDomain": "",
+    "projectId": "",
+    "appId": "",
+}
+ADMIN_USERNAME = "admin"            # 管理員帳號名稱
+USER_EMAIL_DOMAIN = "users.example.com"   # 帳號會在背後轉成 帳號@這個網域，使用者只需要輸入帳號
+MAX_USERS = 10                      # 管理員以外，最多幾個使用者
+
 # 美國 AI 政策新聞的搜尋關鍵字（Google 新聞）
 US_AI_QUERY = '"data center" AI (Trump OR Democrats OR Congress) policy'
 
@@ -68,7 +80,7 @@ US_AI_QUERY = '"data center" AI (Trump OR Democrats OR Congress) policy'
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or ""
 # 依你的免費額度排序：Flash Lite 系列每天 500 次，最適合；Gemma 4 額度也大；2.5 Flash 每天只有 20 次放最後。
 # 程式會先向 Google 查詢你的金鑰實際能用的模型名稱，再依這個順序挑選。
-GEMINI_PREFER = ["3.5-flash-lite", "3.1-flash-lite", "gemma-4-31b", "gemma-4-26b", "2.5-flash-lite", "2.5-flash"]
+GEMINI_PREFER = ["3.5-flash-lite", "3.1-flash-lite", "gemma-4-31b", "2.5-flash-lite", "gemma-4-26b", "2.5-flash"]
 GEMINI_MODELS = []   # 執行時自動填入
 
 OUTPUT = "dashboard.html"
@@ -925,7 +937,7 @@ def pick_gemini_models():
             if n not in picked:
                 picked.append(n)
                 break
-        if len(picked) >= 3:
+        if len(picked) >= 4:
             break
     if not picked:
         raise RuntimeError("金鑰可用的模型裡找不到合適的文字模型：" + ", ".join(names[:15]))
@@ -1008,35 +1020,39 @@ def ai_comment(s, A):
     body = {"contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2048}}
     errs = []
+    url = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
+    hdr = {"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"}
     for model in GEMINI_MODELS:
-        try:
-            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                              headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
-                              json=body, timeout=60)
-            if r.status_code != 200:
+        for attempt in range(3):          # 503 伺服器忙碌、500 內部錯誤通常是暫時的，等一下再試
+            try:
+                r = requests.post(url.format(model), headers=hdr, json=body, timeout=60)
+            except Exception as e:
+                errs.append(f"{model} 連線失敗 {str(e)[:60]}")
+                break
+            if r.status_code == 200:
                 try:
-                    msg = r.json().get("error", {}).get("message", "")
-                except Exception:
-                    msg = r.text
-                msg = re.sub(r"\s+", " ", msg)[:220]
-                errs.append(f"{model} HTTP {r.status_code}：{msg}")
-                if r.status_code == 429 and "limit: 0" not in msg and model == GEMINI_MODELS[-1]:
-                    time.sleep(20)  # 每分鐘次數超過時，等一下再試最後一次
-                    r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                                      headers={"x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json"},
-                                      json=body, timeout=60)
-                    if r.status_code != 200:
-                        continue
-                else:
-                    continue
-            r.raise_for_status()
-            parts = r.json()["candidates"][0]["content"]["parts"]
-            text = "".join(p.get("text", "") for p in parts).strip()
-            text = arabic_numbers(re.sub(r"[*#`]+", "", text))
-            if text:
-                return {"text": text, "model": model}
-        except Exception as e:
-            errs.append(f"{model} {str(e)[:60]}")
+                    parts = r.json()["candidates"][0]["content"]["parts"]
+                    text = arabic_numbers(re.sub(r"[*#`]+", "", "".join(p.get("text", "") for p in parts).strip()))
+                except Exception as e:
+                    errs.append(f"{model} 回傳格式異常 {str(e)[:60]}")
+                    break
+                if text:
+                    return {"text": text, "model": model}
+                errs.append(f"{model} 回傳空白")
+                break
+            try:
+                msg = r.json().get("error", {}).get("message", "")
+            except Exception:
+                msg = r.text
+            msg = re.sub(r"\s+", " ", msg)[:160]
+            if r.status_code in (500, 502, 503, 504) and attempt < 2:
+                time.sleep(10 * (attempt + 1))   # 等 10 秒、20 秒
+                continue
+            if r.status_code == 429 and "limit: 0" not in msg and attempt < 1:
+                time.sleep(20)                    # 每分鐘次數超過，等一下再試一次
+                continue
+            errs.append(f"{model} HTTP {r.status_code}：{msg}")
+            break
     WARN.append(f"{s['code']} AI 解讀：" + "；".join(errs))
     log(f"  ⚠ {s['code']} AI 解讀失敗：" + "；".join(errs))
     return None
@@ -1139,6 +1155,9 @@ def main():
             s["ai"] = {"model": "示範", "text": "整體：（示範）這是 AI 解讀的示範文字，實際內容會由 Gemini 根據上方規則整理的數據撰寫。\n值得留意：（示範）……\n對長期投資的意義：（示範）……"}
         data["ai_enabled"] = True
     data["warnings"] = WARN
+    if FIREBASE.get("apiKey") and FIREBASE.get("projectId"):
+        data["firebase"] = FIREBASE
+        data["auth"] = {"admin": ADMIN_USERNAME, "domain": USER_EMAIL_DOMAIN, "max": MAX_USERS}
 
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "dashboard_template.html"), encoding="utf-8") as f:

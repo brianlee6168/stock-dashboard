@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>選股分析儀表板</title>
+<title>選股分析</title>
 <style>
 :root{--bg:#eef1f4;--panel:#fff;--ink:#1d2733;--mute:#66727f;--line:#d5dbe1;--accent:#1f5f7a;--sel:#e3eef3;
 --up:#c62828;--down:#1b7a3d;--ma5:#e08a00;--ma20:#2f6fd1;--ma60:#8a46b8;--bb:#9aa6b2;--warn:#fff4d6;--warnink:#6b5200}
@@ -62,6 +62,7 @@ ul.pts li{padding:5px 0;border-bottom:1px solid var(--line);display:flex;gap:8px
 .big2{font-size:16px;font-weight:700;margin:4px 0 6px}
 .ai{line-height:1.8;background:var(--sel);border-radius:6px;padding:12px 14px}
 .tabs{overflow-x:auto}
+.acct{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:10px;font-size:14px}
 .grid4{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px 16px}
 .fld{display:flex;flex-direction:column;gap:4px}
 .fld small{color:var(--mute);font-size:12px}
@@ -309,8 +310,62 @@ function pChips(s) {
 
 /* ---------- 我的策略 ---------- */
 const SKEY = "dash-strategy-v2";
-function sLoad() { try { return JSON.parse(localStorage.getItem(SKEY) || "null") || {}; } catch (e) { return {}; } }
-function sSave(o) { try { localStorage.setItem(SKEY, JSON.stringify(o)); } catch (e) {} }
+const CLOUD = !!(D.firebase && D.firebase.apiKey);
+const AUTH = {ready: !CLOUD, user: null, profile: null, data: null, users: null, err: ""};
+function sLoad() {
+  if (CLOUD) return JSON.parse(JSON.stringify(AUTH.data || {}));
+  try { return JSON.parse(localStorage.getItem(SKEY) || "null") || {}; } catch (e) { return {}; }
+}
+function sSave(o) {
+  if (CLOUD) {
+    AUTH.data = o;
+    window.FB.saveStrategy(o).catch(e => alert("儲存失敗：" + e.message));
+    return;
+  }
+  try { localStorage.setItem(SKEY, JSON.stringify(o)); } catch (e) {}
+}
+window.addEventListener("fb-auth", () => { if (cur === -1) render(); });
+
+function pLogin() {
+  return `<div class="head"><h1>我的策略</h1><span class="m">請先登入</span></div>
+  <section style="max-width:420px"><h2>登入</h2>
+    ${!AUTH.ready ? `<p class="empty">連線中……</p>` : `
+    <div class="grid4" style="grid-template-columns:1fr">
+      <label class="fld"><small>帳號</small><input id="l_u" autocomplete="username"></label>
+      <label class="fld"><small>密碼</small><input id="l_p" type="password" autocomplete="current-password"></label>
+      <button id="l_go" class="pri">登入</button>
+    </div><p class="tip" id="l_msg" style="color:var(--down)">${esc(AUTH.err)}</p>
+    <p class="tip">帳號由管理員建立。每個人的策略資料各自獨立，換裝置登入也看得到。</p>`}
+  </section>`;
+}
+
+function pAccountBar() {
+  const p = AUTH.profile || {};
+  return `<div class="acct"><span>已登入：<b>${esc(p.username || "")}</b>${p.role === "admin" ? "（管理員）" : ""}</span>
+    <button class="ghost" id="a_pw">改密碼</button><button class="ghost" id="a_out">登出</button></div>
+    <div id="pwbox" class="grid4" style="display:none;margin-bottom:12px">
+      <label class="fld"><small>目前密碼</small><input id="pw_old" type="password" autocomplete="current-password"></label>
+      <label class="fld"><small>新密碼（至少 6 個字）</small><input id="pw_new" type="password" autocomplete="new-password"></label>
+      <div class="fld"><small>&nbsp;</small><button id="pw_go" class="pri">更新密碼</button></div>
+      <p class="tip" id="pw_msg"></p></div>`;
+}
+
+function pAdmin() {
+  const A = D.auth, list = (AUTH.users || []).filter(u => u.role !== "admin");
+  const active = list.filter(u => u.active).length;
+  return `<section><h2>管理使用者</h2><p class="tip">只有管理員看得到這一區。使用者最多 ${A.max} 位（目前啟用 ${active} 位）。</p>
+    ${AUTH.users === null ? `<p class="empty">讀取中……</p>` : `
+    <div class="tbl"><table><thead><tr><th>帳號</th><th>狀態</th><th>建立時間</th><th></th></tr></thead><tbody>${
+      list.length ? list.map(u => `<tr><td>${esc(u.username)}</td><td>${u.active ? "啟用" : "<span style='color:var(--mute)'>停用</span>"}</td><td>${esc(u.created || "—")}</td>
+      <td><button class="ghost" data-act="${esc(u.uid)}" data-on="${u.active ? 0 : 1}">${u.active ? "停用" : "啟用"}</button></td></tr>`).join("")
+      : `<tr><td colspan="4" class="empty">還沒有使用者</td></tr>`}</tbody></table></div>`}
+    <h3>新增使用者</h3><div class="grid4">
+      <label class="fld"><small>帳號（英文或數字）</small><input id="u_new" autocomplete="off"></label>
+      <label class="fld"><small>初始密碼（至少 6 個字）</small><input id="u_pw" type="text" autocomplete="off"></label>
+      <div class="fld"><small>&nbsp;</small><button id="u_add" class="pri">新增</button></div></div>
+    <p class="tip" id="u_msg"></p>
+    <p class="tip">停用後該使用者就無法讀寫自己的策略資料；要完全刪除帳號，請到 Firebase 主控台的 Authentication 刪除。使用者忘記密碼時，請在主控台刪除後重新新增。</p></section>`;
+}
 const pad = n => (n < 10 ? "0" : "") + n;
 const isoD = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const money = v => isNum(v) ? Math.round(v).toLocaleString("en-US") : "—";
@@ -357,6 +412,15 @@ function stratCalc() {
 }
 
 function pStrategy() {
+  if (CLOUD) {
+    if (!AUTH.user) return pLogin();
+    if (!AUTH.profile || !AUTH.data) return `<div class="head"><h1>我的策略</h1></div><section><p class="empty">${AUTH.err ? esc(AUTH.err) : "讀取你的策略資料中……"}</p></section>`;
+    if (!AUTH.profile.active) return `<div class="head"><h1>我的策略</h1></div>${pAccountBar()}<section><p class="empty">這個帳號已被停用，請聯絡管理員。</p></section>`;
+  }
+  return (CLOUD ? pAccountBar() : "") + pStrategyBody() + (CLOUD && AUTH.profile.role === "admin" ? pAdmin() : "");
+}
+
+function pStrategyBody() {
   const c = stratCalc(), st = c.st;
   const boughtToday = c.buys.some(b => b.d === isoD(new Date()));
   const label = i => i === c.NB ? `第 ${i + 1} 批（最後加碼）` : `第 ${i + 1} 批`;
@@ -392,7 +456,7 @@ function pStrategy() {
     ${ro("最新收盤距觸發價", c.n >= c.TOTAL ? "—" : (isNum(c.diff) ? sg(c.diff) + "%" : "—"), "負數代表已低於觸發價")}
     ${ro("本輪進度", `${c.n} / ${c.TOTAL} 批`, `本輪從 ${c.psISO} 起算，${isoD(c.nextReset)} 重置`)}
   </div></section>
-  <section><h2>加碼金</h2>${st.public ? `<p class="tip">公開網頁不放你的金額，請在這台裝置填一次，只會存在這個瀏覽器裡。</p>` : ""}<div class="grid4">
+  <section><h2>加碼金</h2>${CLOUD ? `<p class="tip">這區的數字存在你的帳號裡，換裝置登入也會一樣。</p>` : st.public ? `<p class="tip">公開網頁不放你的金額，請在這台裝置填一次，只會存在這個瀏覽器裡。</p>` : ""}<div class="grid4">
     ${inp("s_base", "起算加碼金（元）", c.cfg.base, "", 100)}
     ${inp("s_dep", "每月 5 號入帳（元）", c.cfg.dep, `${esc(st.deposit_start ?? "")} 起`, 500)}
     ${inp("s_pct", "每批比例（%）", c.cfg.pct, "本輪開始時餘額 × 比例", 1)}
@@ -408,12 +472,47 @@ function pStrategy() {
     <label class="fld"><small>成交均價</small><input id="b_p" type="number" step="0.01" placeholder="例如 98.50"></label>
     <label class="fld"><small>股數</small><input id="b_s" type="number" step="1" min="1" placeholder="例如 60"></label>
     <div class="fld"><small>&nbsp;</small><button id="b_add" class="pri">加入紀錄</button></div>
-  </div><p class="tip" id="b_msg">紀錄只存在這台裝置的瀏覽器，換手機或電腦要另外記；清除瀏覽器資料會一起刪掉。</p></section>
+  </div><p class="tip" id="b_msg">${CLOUD ? "紀錄存在你的帳號裡，只有你自己看得到。" : "紀錄只存在這台裝置的瀏覽器，換手機或電腦要另外記；清除瀏覽器資料會一起刪掉。"}</p></section>
   <section><h2>七批階梯（本輪）</h2><div class="tbl"><table class="lad"><thead><tr><th>批次</th><th>狀態</th><th>回檔</th><th>觸發價</th><th>成交均價</th><th>股數</th><th>金額</th><th>日期</th><th>H 的幾 %</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   <p class="tip">預估列假設每批剛好成交在觸發價；實際以你記錄的成交均價為準。一天最多買一批，建議使用限價單。股價未還原除權息，除息前後 H 會失真。</p></section>`;
 }
 
 function bindStrategy() {
+  const $ = id => document.getElementById(id);
+  if (CLOUD && $("l_go")) {
+    const go = () => { AUTH.err = ""; $("l_msg").textContent = "登入中……";
+      window.FB.login($("l_u").value.trim(), $("l_p").value).catch(e => { AUTH.err = "帳號或密碼錯誤"; $("l_msg").textContent = AUTH.err; }); };
+    $("l_go").onclick = go; $("l_p").onkeydown = e => { if (e.key === "Enter") go(); };
+    return;
+  }
+  if (CLOUD && $("a_out")) {
+    $("a_out").onclick = () => window.FB.logout();
+    $("a_pw").onclick = () => { const b = $("pwbox"); b.style.display = b.style.display === "none" ? "grid" : "none"; };
+    $("pw_go").onclick = () => {
+      const m = $("pw_msg"), n = $("pw_new").value;
+      if (n.length < 6) { m.textContent = "新密碼至少 6 個字。"; return; }
+      m.textContent = "更新中……";
+      window.FB.changePassword($("pw_old").value, n).then(() => { m.textContent = "密碼已更新。"; $("pw_old").value = $("pw_new").value = ""; })
+        .catch(e => { m.textContent = "更新失敗：目前密碼可能不正確。"; });
+    };
+  }
+  if (CLOUD && $("u_add")) {
+    $("u_add").onclick = () => {
+      const m = $("u_msg"), u = $("u_new").value.trim(), pw = $("u_pw").value;
+      const act = (AUTH.users || []).filter(x => x.role !== "admin" && x.active).length;
+      if (!/^[A-Za-z0-9_.-]{3,30}$/.test(u)) { m.textContent = "帳號請用 3–30 個英文、數字或 _ . -"; return; }
+      if (pw.length < 6) { m.textContent = "密碼至少 6 個字。"; return; }
+      if (act >= D.auth.max) { m.textContent = `已達上限 ${D.auth.max} 位，請先停用其他使用者。`; return; }
+      if ((AUTH.users || []).some(x => x.username.toLowerCase() === u.toLowerCase())) { m.textContent = "這個帳號已經存在。"; return; }
+      m.textContent = "建立中……";
+      window.FB.createUser(u, pw).then(() => window.FB.listUsers()).then(() => render())
+        .catch(e => { m.textContent = "建立失敗：" + (e.code === "auth/email-already-in-use" ? "帳號已存在" : e.message); });
+    };
+    document.querySelectorAll("[data-act]").forEach(b => b.onclick = () => {
+      window.FB.setActive(b.dataset.act, b.dataset.on === "1").then(() => window.FB.listUsers()).then(() => render())
+        .catch(e => alert("更新失敗：" + e.message));
+    });
+  }
   const S = () => sLoad();
   [["s_base", "base"], ["s_dep", "dep"], ["s_pct", "pct"], ["s_pb", "pb"], ["s_fpb", "fpb"]].forEach(([id, k]) => {
     const el = document.getElementById(id); if (!el) return;
@@ -477,6 +576,72 @@ function showErr(msg) {
 }
 window.addEventListener("error", e => showErr(e.message));
 try { renderMacro(); renderNav(); render(); } catch (e) { showErr(e.message); }
+</script>
+<script type="module">
+/* 「我的策略」帳號登入：Firebase Authentication ＋ Cloud Firestore */
+async function fbInit() {
+  const V = "https://www.gstatic.com/firebasejs/13.1.0/";
+  let mods;
+  try {
+    mods = await Promise.all([import(V + "firebase-app.js"), import(V + "firebase-auth.js"), import(V + "firebase-firestore.js")]);
+  } catch (e) {
+    AUTH.ready = true; AUTH.err = "無法載入登入元件，請檢查網路後重新整理。";
+    window.dispatchEvent(new Event("fb-auth"));
+    return;
+  }
+  const [{ initializeApp }, A, F] = mods;
+  const app = initializeApp(D.firebase), auth = A.getAuth(app), db = F.getFirestore(app);
+  const email = u => `${u.toLowerCase()}@${D.auth.domain}`;
+  const fmt = ts => ts && ts.toDate ? ts.toDate().toISOString().slice(0, 10) : "";
+  const ping = () => window.dispatchEvent(new Event("fb-auth"));
+
+  window.FB = {
+    login: (u, p) => A.signInWithEmailAndPassword(auth, email(u), p),
+    logout: () => A.signOut(auth),
+    saveStrategy: o => F.setDoc(F.doc(db, "strategies", auth.currentUser.uid),
+      { settings: o.settings || {}, buys: o.buys || [], updated: F.serverTimestamp() }),
+    changePassword: async (oldPw, newPw) => {
+      const cred = A.EmailAuthProvider.credential(auth.currentUser.email, oldPw);
+      await A.reauthenticateWithCredential(auth.currentUser, cred);
+      await A.updatePassword(auth.currentUser, newPw);
+    },
+    listUsers: async () => {
+      const snap = await F.getDocs(F.collection(db, "users"));
+      AUTH.users = snap.docs.map(d => ({ uid: d.id, ...d.data(), created: fmt(d.data().created) }))
+        .sort((a, b) => (a.created || "").localeCompare(b.created || ""));
+    },
+    createUser: async (u, p) => {
+      // 用第二個連線建立帳號，管理員自己不會被登出
+      const app2 = initializeApp(D.firebase, "creator-" + Date.now()), auth2 = A.getAuth(app2);
+      const cred = await A.createUserWithEmailAndPassword(auth2, email(u), p);
+      await A.signOut(auth2);
+      await F.setDoc(F.doc(db, "users", cred.user.uid), { username: u, role: "user", active: true, created: F.serverTimestamp() });
+    },
+    setActive: (uid, on) => F.updateDoc(F.doc(db, "users", uid), { active: on }),
+  };
+
+  A.onAuthStateChanged(auth, async user => {
+    AUTH.ready = true; AUTH.user = user; AUTH.profile = AUTH.data = AUTH.users = null;
+    ping();
+    if (!user) return;
+    try {
+      const uref = F.doc(db, "users", user.uid);
+      let snap = await F.getDoc(uref);
+      if (!snap.exists() && user.email === email(D.auth.admin)) {
+        await F.setDoc(uref, { username: D.auth.admin, role: "admin", active: true, created: F.serverTimestamp() });
+        snap = await F.getDoc(uref);
+      }
+      AUTH.profile = snap.exists() ? snap.data() : { username: user.email.split("@")[0], active: false };
+      if (AUTH.profile.active) {
+        const s = await F.getDoc(F.doc(db, "strategies", user.uid));
+        AUTH.data = s.exists() ? s.data() : {};
+      } else AUTH.data = {};
+      if (AUTH.profile.role === "admin") await window.FB.listUsers();
+    } catch (e) { AUTH.err = "讀取資料失敗：" + e.message; AUTH.profile = AUTH.profile || { active: false }; AUTH.data = AUTH.data || {}; }
+    ping();
+  });
+}
+if (typeof D !== "undefined" && D.firebase && D.firebase.apiKey) fbInit();
 </script>
 </body>
 </html>
