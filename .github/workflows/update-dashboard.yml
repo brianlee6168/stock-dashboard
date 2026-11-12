@@ -27,6 +27,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -r requirements.txt
+      - name: 安裝瀏覽器（抓國發會景氣燈號的備用方法）
+        run: pip install playwright && python -m playwright install --with-deps chromium
       - run: python dashboard.py --no-open --public --out site/index.html
         env:
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
