@@ -12,7 +12,7 @@
 需要先安裝套件（只要做一次）：
     pip install requests pandas yfinance
 """
-import sys, os, io, re, json, random, time, webbrowser, pathlib
+import sys, os, io, re, json, random, time, webbrowser, pathlib, hashlib
 import datetime as dt
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
@@ -69,6 +69,12 @@ FIREBASE = {
     "appId": "",
 }
 ADMIN_USERNAME = "admin"            # 管理員帳號名稱
+
+# 還沒設定 Firebase 時的「前端測試帳號」：格式 帳號:密碼,帳號:密碼
+# 建議改放在 GitHub Secrets 的 LOCAL_USERS，就不會出現在公開的程式碼裡。
+# 注意：這只是簡單的門檻，不是真正的安全登入；資料仍存在各自的瀏覽器裡。
+LOCAL_USERS = os.environ.get("LOCAL_USERS") or "1234:1234,5678:5678"
+LOCAL_SALT = "stock-analysis-v1"
 USER_EMAIL_DOMAIN = "users.example.com"   # 帳號會在背後轉成 帳號@這個網域，使用者只需要輸入帳號
 MAX_USERS = 10                      # 管理員以外，最多幾個使用者
 
@@ -1158,6 +1164,14 @@ def main():
     if FIREBASE.get("apiKey") and FIREBASE.get("projectId"):
         data["firebase"] = FIREBASE
         data["auth"] = {"admin": ADMIN_USERNAME, "domain": USER_EMAIL_DOMAIN, "max": MAX_USERS}
+    elif LOCAL_USERS.strip():
+        # 網頁上只放「帳號＋密碼」的雜湊值，不放明碼
+        hs = []
+        for pair in LOCAL_USERS.split(","):
+            if ":" in pair:
+                u, pw = pair.strip().split(":", 1)
+                hs.append(hashlib.sha256(f"{LOCAL_SALT}|{u.strip()}|{pw.strip()}".encode()).hexdigest())
+        data["local_login"] = {"salt": LOCAL_SALT, "hashes": hs}
 
     here = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(here, "dashboard_template.html"), encoding="utf-8") as f:

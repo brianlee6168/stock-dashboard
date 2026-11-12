@@ -311,10 +311,18 @@ function pChips(s) {
 /* ---------- 我的策略 ---------- */
 const SKEY = "dash-strategy-v2";
 const CLOUD = !!(D.firebase && D.firebase.apiKey);
+const LOCALLOGIN = !CLOUD && !!(D.local_login && D.local_login.hashes && D.local_login.hashes.length);
+const LOCAL = {user: null};
+try { const s = JSON.parse(localStorage.getItem("dash-login") || "null"); if (LOCALLOGIN && s && D.local_login.hashes.includes(s.h)) LOCAL.user = s.u; } catch (e) {}
+const skey = () => LOCALLOGIN && LOCAL.user ? SKEY + ":" + LOCAL.user : SKEY;
+async function sha256hex(t) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+}
 const AUTH = {ready: !CLOUD, user: null, profile: null, data: null, users: null, err: ""};
 function sLoad() {
   if (CLOUD) return JSON.parse(JSON.stringify(AUTH.data || {}));
-  try { return JSON.parse(localStorage.getItem(SKEY) || "null") || {}; } catch (e) { return {}; }
+  try { return JSON.parse(localStorage.getItem(skey()) || "null") || {}; } catch (e) { return {}; }
 }
 function sSave(o) {
   if (CLOUD) {
@@ -322,7 +330,7 @@ function sSave(o) {
     window.FB.saveStrategy(o).catch(e => alert("儲存失敗：" + e.message));
     return;
   }
-  try { localStorage.setItem(SKEY, JSON.stringify(o)); } catch (e) {}
+  try { localStorage.setItem(skey(), JSON.stringify(o)); } catch (e) {}
 }
 window.addEventListener("fb-auth", () => { if (cur === -1) render(); });
 
@@ -335,7 +343,7 @@ function pLogin() {
       <label class="fld"><small>密碼</small><input id="l_p" type="password" autocomplete="current-password"></label>
       <button id="l_go" class="pri">登入</button>
     </div><p class="tip" id="l_msg" style="color:var(--down)">${esc(AUTH.err)}</p>
-    <p class="tip">帳號由管理員建立。每個人的策略資料各自獨立，換裝置登入也看得到。</p>`}
+    <p class="tip">${CLOUD ? "帳號由管理員建立。每個人的策略資料各自獨立，換裝置登入也看得到。" : "每個帳號的策略資料各自獨立，存在這台裝置的瀏覽器裡。"}</p>`}
   </section>`;
 }
 
@@ -412,6 +420,10 @@ function stratCalc() {
 }
 
 function pStrategy() {
+  if (LOCALLOGIN) {
+    if (!LOCAL.user) return pLogin();
+    return `<div class="acct"><span>已登入：<b>${esc(LOCAL.user)}</b></span><button class="ghost" id="a_out">登出</button></div>` + pStrategyBody();
+  }
   if (CLOUD) {
     if (!AUTH.user) return pLogin();
     if (!AUTH.profile || !AUTH.data) return `<div class="head"><h1>我的策略</h1></div><section><p class="empty">${AUTH.err ? esc(AUTH.err) : "讀取你的策略資料中……"}</p></section>`;
@@ -479,6 +491,24 @@ function pStrategyBody() {
 
 function bindStrategy() {
   const $ = id => document.getElementById(id);
+  if (LOCALLOGIN && $("l_go")) {
+    const go = async () => {
+      const u = $("l_u").value.trim(), p = $("l_p").value;
+      try {
+        const hv = await sha256hex(`${D.local_login.salt}|${u}|${p}`);
+        if (D.local_login.hashes.includes(hv)) {
+          LOCAL.user = u; AUTH.err = "";
+          try { localStorage.setItem("dash-login", JSON.stringify({u, h: hv})); } catch (e) {}
+          render();
+        } else { AUTH.err = "帳號或密碼錯誤"; $("l_msg").textContent = AUTH.err; }
+      } catch (e) { $("l_msg").textContent = "這個瀏覽器不支援登入驗證，請改用 Chrome、Edge 或 Safari。"; }
+    };
+    $("l_go").onclick = go; $("l_p").onkeydown = e => { if (e.key === "Enter") go(); };
+    return;
+  }
+  if (LOCALLOGIN && $("a_out")) {
+    $("a_out").onclick = () => { LOCAL.user = null; try { localStorage.removeItem("dash-login"); } catch (e) {} render(); };
+  }
   if (CLOUD && $("l_go")) {
     const go = () => { AUTH.err = ""; $("l_msg").textContent = "登入中……";
       window.FB.login($("l_u").value.trim(), $("l_p").value).catch(e => { AUTH.err = "帳號或密碼錯誤"; $("l_msg").textContent = AUTH.err; }); };
