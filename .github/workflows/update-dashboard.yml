@@ -32,6 +32,7 @@ jobs:
       - run: python dashboard.py --no-open --public --out site/index.html
         env:
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
