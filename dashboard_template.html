@@ -257,6 +257,7 @@ function pFund(s) {
       rows.slice(0, 10).map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.code)}</td><td>${f(r.w)}%</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">持股資料沒抓到</p>`;
     if (fu.overlap?.length) h += `<h3>和其他 ETF 的持股重疊度</h3><p class="tip">把兩檔共同持有的股票，取較小的權重加總。數字越高，代表兩檔越像在買同一批股票。</p>
       <div class="kv">${fu.overlap.map(o => `<div><small>和 ${esc(o.code)}</small><b>${f(o.pct, 1)}%</b></div>`).join("")}</div>`;
+    h += holdChanges(ho);
     h += `<h3>配息紀錄</h3><p class="tip">單次殖利率＝配息 ÷ 除息前收盤價。近 12 個月殖利率＝近一年配息合計 ÷ 最新收盤價。</p>${divBlock(dv)}`;
     if (s.code === "00406A") h += `<p class="tip">00406A 是主動式 ETF，持股由經理人調整，前十大持股的變化比被動式 ETF 更值得留意；掩護性買權比例請以中信投信公告為準。</p>`;
     h += `<p class="tip">費用率、折溢價：目前沒有穩定的免費來源，請到投信官網查看。</p>`;
@@ -300,6 +301,18 @@ function usNews() {
   return `<div class="subtabs">${T.map((t, i) => `<button data-us="${i}" aria-selected="${i === usTab}">${esc(t.name)}</button>`).join("")}</div>${newsList(T[Math.min(usTab, T.length - 1)].items)}`;
 }
 
+function holdChanges(ho) {
+  const ch = ho?.changes;
+  if (!ch) return `<h3>持股異動</h3><p class="empty">還沒有比較基準。持股資料日更新後，下一次執行就會和上一個資料日比較。</p>`;
+  const li = (arr, fn) => arr.length ? `<ul class="news">${arr.map(r => `<li>${fn(r)}</li>`).join("")}</ul>` : `<p class="empty">無</p>`;
+  const nm = r => `${esc(r.name)}（${esc(r.code)}）`;
+  return `<h3>持股異動</h3><p class="tip">比較 ${esc(ch.from)} → ${esc(ch.to)} 兩個資料日的持股表。權重變動超過 ${ch.delta ?? 0.5} 個百分點才列出；「新增」「剔除」是指在抓到的持股表中出現或消失，若表格只列前幾名，可能只是排名進出。</p>
+    <div class="grid2">
+      <div><h3>新增</h3>${li(ch.added, r => `${nm(r)} ${f(r.w)}%`)}<h3>剔除</h3>${li(ch.removed, r => `${nm(r)} 原 ${f(r.w)}%`)}</div>
+      <div><h3>權重增加</h3>${li(ch.up, r => `${nm(r)} ${f(r.from)}% → ${f(r.to)}%（${sg(r.d)}）`)}<h3>權重減少</h3>${li(ch.down, r => `${nm(r)} ${f(r.from)}% → ${f(r.to)}%（${sg(r.d)}）`)}</div>
+    </div>`;
+}
+
 function nextDiv(s) {
   const dv = s.fund?.div || {}, c = s.quote?.close, up = dv.upcoming?.[0], h0 = dv.history?.[0];
   const ago = new Date(D.generated.slice(0, 10)); ago.setFullYear(ago.getFullYear() - 1);
@@ -322,7 +335,7 @@ function pNews(s) {
     s.announce?.length ? `<ul class="news">${s.announce.map(a => `<li><details><summary>${esc(a.title)}<small>${esc(a.date)}${a.rule ? "｜" + esc(a.rule) : ""}</small></summary><p class="tip">${esc(a.desc)}</p></details></li>`).join("")}</ul>` : `<p class="empty">最近一個交易日沒有重大訊息</p>`}
     ${src("來源：證交所 OpenAPI（上市公司每日重大訊息）、配息 FinMind｜完整歷史請到公開資訊觀測站")}</section>` :
   `<section><h2>ETF 專屬：配息</h2>${nextDiv(s)}
-    <p class="tip">持股變化請看「基本面」的前十大持股（含資料日期）；規模變化、成分股調整公告請到投信官網查看${s.code === "00406A" ? "，00406A 另外留意經理人持股異動" : ""}。</p></section>`}
+    <p class="tip">持股異動請看「基本面」的「持股異動」；規模變化、成分股調整公告請到投信官網查看${s.code === "00406A" ? "，00406A 另外留意經理人持股異動" : ""}。</p></section>`}
   <section><h2>美國相關新聞（台灣媒體，所有標的相同）</h2><p class="tip">台灣媒體報導的美國 AI、川普、經濟與熱門時事，只列標題。</p>
   ${usNews()}${src("來源：Google 新聞中文搜尋＋台灣財經媒體 RSS｜只收可信媒體、近 2 天｜「N 家報導」代表多家媒體都有報導")}</section>`;
 }

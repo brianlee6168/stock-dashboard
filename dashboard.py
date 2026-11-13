@@ -565,6 +565,47 @@ def fetch_holdings(code):
     return {"date": date, "rows": rows}
 
 
+HOLD_DELTA = 0.5   # ETF 持股異動：權重變動超過幾個百分點才列出
+
+
+def add_holdings_changes(code, cur):
+    """和「上一個不同資料日」的持股比較。基準取自上一版已發佈的頁面（prev_page_data）。"""
+    if not cur or not cur.get("rows"):
+        return cur
+    prev = prev_page_data() or {}
+    ps = next((x for x in (prev.get("stocks") or []) if x.get("code") == code), None)
+    ph = ((ps or {}).get("fund") or {}).get("holdings") or {}
+    base = None
+    if ph.get("date") and ph.get("date") != cur.get("date") and ph.get("rows"):
+        base = {"date": ph["date"], "rows": [{"code": r["code"], "name": r["name"], "w": r["w"]} for r in ph["rows"]]}
+    elif ph.get("prev", {}).get("rows"):
+        base = ph["prev"]          # 資料日沒變：沿用上次留下的比較基準
+    if not base:
+        return cur
+    cur["prev"] = base
+    old = {r["code"]: r for r in base["rows"]}
+    new = {r["code"]: r for r in cur["rows"]}
+    ch = {"from": base["date"], "to": cur.get("date"), "delta": HOLD_DELTA,
+          "added": [], "removed": [], "up": [], "down": []}
+    for c, r in new.items():
+        if c not in old:
+            ch["added"].append(r)
+            continue
+        d = round(r["w"] - old[c]["w"], 2)
+        item = {"code": c, "name": r["name"], "from": old[c]["w"], "to": r["w"], "d": d}
+        if d >= HOLD_DELTA:
+            ch["up"].append(item)
+        elif d <= -HOLD_DELTA:
+            ch["down"].append(item)
+    ch["removed"] = [r for c, r in old.items() if c not in new]
+    ch["added"].sort(key=lambda r: -r["w"])
+    ch["removed"].sort(key=lambda r: -r["w"])
+    ch["up"].sort(key=lambda r: -r["d"])
+    ch["down"].sort(key=lambda r: r["d"])
+    cur["changes"] = ch
+    return cur
+
+
 # ---------------------------------------------------------------------
 # 總經、匯率、美國新聞
 # ---------------------------------------------------------------------
@@ -1345,7 +1386,7 @@ def main():
             s["fund"] = fetch_fund(code, kind)
             s["fund"]["div"] = fetch_dividends(code, s.get("quote", {}).get("close"))
             if kind == "ETF":
-                s["fund"]["holdings"] = safe(f"{code} ETF 持股", lambda: fetch_holdings(code))
+                s["fund"]["holdings"] = safe(f"{code} ETF 持股", lambda: add_holdings_changes(code, fetch_holdings(code)))
             s["chips"] = fetch_chips(code)
             s["news"] = fetch_news(code, name)
             data["stocks"].append(s)
