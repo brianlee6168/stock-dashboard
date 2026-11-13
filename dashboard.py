@@ -63,10 +63,10 @@ STRATEGY = {
 # 「我的策略」帳號登入（Firebase）。把 Firebase 網頁設定貼進來就會啟用；留空則維持存在瀏覽器裡的方式。
 # 這些設定本來就是公開的（網頁一定要讀得到），安全性靠 Firestore 安全規則控管，可以放在公開 repo。
 FIREBASE = {
-    "apiKey": "",
-    "authDomain": "",
-    "projectId": "",
-    "appId": "",
+    "apiKey": "AIzaSyCgE1_IKtv9qp6bmpR9Qk0SVis0OVx4DaI",
+    "authDomain": "stock-dashboard-734a2.firebaseapp.com",
+    "projectId": "stock-dashboard-734a2",
+    "appId": "1:232203792223:web:d17e3551997dd6baa4d0ea",
 }
 ADMIN_USERNAME = "admin"            # 管理員帳號名稱
 
