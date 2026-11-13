@@ -131,15 +131,15 @@ function renderMacro() {
   const q = (o, d = 2) => o ? `<b class="${cl(o.chg)}">${f(o.value, d)}</b> <span class="${cl(o.chg)}">${sg(o.chg, d)}</span>` : "<b>—</b>";
   const cells = [
     ["加權指數", q(m.twii), `${esc(m.twii?.date ?? "")} 收盤`, "台股大盤，用來比較個別標的是強於還是弱於大盤。"],
-    ["費城半導體", q(m.sox), "每天 07:00（前一美股日）", "美國半導體股指數，台股電子權值股和它連動度高。"],
+    ["費城半導體", q(m.sox), "每天 06:45（前一美股日）", "美國半導體股指數，台股電子權值股和它連動度高。"],
     ["聯準會利率", `<b>${esc(m.fed?.value ?? "—")}</b>`, "開會後變動", "美國政策利率區間，影響全球資金流向。"],
     ["美國 CPI 年增率", `<b>${esc(m.cpi?.value ?? "—")}</b>`, `每月｜${esc(m.cpi?.date ?? "")}`, "美國通膨，影響聯準會下一步。"],
-    ["美債 10 年殖利率", m.us10y ? `<b>${f(m.us10y.value)}%</b> <span class="${cl(m.us10y.chg)}">${sg(m.us10y.chg)}</span>` : "<b>—</b>", "每天 07:00（前一美股日）", "全球資金成本參考，上升時股票相對吸引力通常下降。"],
+    ["美債 10 年殖利率", m.us10y ? `<b>${f(m.us10y.value)}%</b> <span class="${cl(m.us10y.chg)}">${sg(m.us10y.chg)}</span>` : "<b>—</b>", "每天 06:45（前一美股日）", "全球資金成本參考，上升時股票相對吸引力通常下降。"],
     ["台灣景氣燈號", lightCell(m.light), `每月｜${esc(m.light?.date ?? "")}${m.light?.stale ? "（沿用上次）" : ""}`, "國發會每月約 27 日公布上個月燈號。9–16 分藍燈、17–22 黃藍燈、23–31 綠燈、32–37 黃紅燈、38–45 紅燈。"],
-    ["VIX 恐慌指數", m.vix ? `<b>${f(m.vix.value)}</b> <span>${sg(m.vix.chg)}</span>` : "<b>—</b>", "每天 07:00（前一美股日）", "美股預期波動程度。一般 20 以下算平靜，30 以上代表市場明顯恐慌。數字變大不是漲跌訊號，只表示波動預期升高。"],
+    ["VIX 恐慌指數", m.vix ? `<b>${f(m.vix.value)}</b> <span>${sg(m.vix.chg)}</span>` : "<b>—</b>", "每天 06:45（前一美股日）", "美股預期波動程度。一般 20 以下算平靜，30 以上代表市場明顯恐慌。數字變大不是漲跌訊號，只表示波動預期升高。"],
     ["美國非農新增就業", `<b class="${cl(m.nfp?.chg_raw)}">${esc(m.nfp?.value ?? "—")}</b>`, `每月｜${esc(m.nfp?.date ?? "")}`, "美國上個月新增多少就業人口，每月第一個週五公布。數字強代表景氣熱，可能讓聯準會較晚降息；之後常會被修正。"],
-    ["USD/TWD", m.fx ? `<b>${f(m.fx.value, 3)}</b> <span>${sg(m.fx.chg, 3)}</span>${spark(m.fx.series)}` : "<b>—</b>", "近 30 天走勢｜每天 18:00", "數字變大代表台幣貶值。"],
-    ["資料產生時間", `<b>${esc(D.generated)}</b>`, "排程 18:00、21:00、07:00", "這份頁面最後一次執行程式的時間。"],
+    ["USD/TWD", m.fx ? `<b>${f(m.fx.value, 3)}</b> <span>${sg(m.fx.chg, 3)}</span>${spark(m.fx.series)}` : "<b>—</b>", "近 30 天走勢｜每天 15:00", "數字變大代表台幣貶值。"],
+    ["資料產生時間", `<b>${esc(D.generated)}</b>`, "排程 06:45（07:35 備用）、15:15、18:15、21:45", "這份頁面最後一次執行程式的時間。"],
   ];
   document.getElementById("macro").innerHTML = cells.map(c => `<div class="c" title="${esc(c[3])}"><small>${c[0]}</small>${c[1]}<i>${c[2]}</i></div>`).join("");
   const b = [];
@@ -285,7 +285,7 @@ function pTech(s) {
   </div>
   <h3>MACD(12, 26, 9)</h3><p class="tip">DIF 穿過 MACD 線往上偏多；柱狀體在 0 軸上方且變長，代表多方動能增強。它是落後指標，盤整時容易出現假訊號。</p>
   <div class="legend"><span style="--c:var(--ma5)">DIF</span><span style="--c:var(--ma20)">MACD</span></div>${macdChart(t)}
-  ${src(`來源：FinMind 日成交資料（未還原除權息）｜資料日 ${esc(s.quote?.date ?? "—")}｜每天 18:00 更新`)}</section>`;
+  ${src(`來源：FinMind 日成交資料（未還原除權息）｜資料日 ${esc(s.quote?.date ?? "—")}｜每天 15:15 更新`)}</section>`;
 }
 
 const newsList = arr => arr?.length ? `<ul class="news">${arr.map(n => {
@@ -329,7 +329,7 @@ function pChips(s) {
   ${ins ? `<div class="tbl"><table><thead><tr><th>法人</th><th>買進</th><th>賣出</th><th>買賣超</th></tr></thead><tbody>${
     ins.rows.map(r => `<tr><td>${r.name}</td><td>${f(r.buy, 0)}</td><td>${f(r.sell, 0)}</td><td class="${cl(r.net)}">${sg(r.net, 0)}</td></tr>`).join("")}</tbody></table></div>
     <h3>近 10 日外資買賣超</h3>${barMini(ins.foreign10)}` : `<p class="empty">沒有法人資料</p>`}
-  ${src(`來源：FinMind（證交所）｜法人 ${esc(ins?.date ?? "—")}、融資融券 ${esc(m?.date ?? "—")}、借券 ${esc(b?.date ?? "—")}｜FinMind 約 20:00 更新法人、21:00 更新融資融券，所以完整資料在 21:00 那次執行才會齊，若當晚還沒更新，隔天早上那次會補上`)}</section>`;
+  ${src(`來源：FinMind（證交所）｜法人 ${esc(ins?.date ?? "—")}、融資融券 ${esc(m?.date ?? "—")}、借券 ${esc(b?.date ?? "—")}｜FinMind 約 20:00 更新法人、21:00 更新融資融券，所以完整資料在 21:45 那次執行才會齊，若當晚還沒更新，隔天早上那次會補上`)}</section>`;
 }
 
 /* ---------- 我的策略 ---------- */
