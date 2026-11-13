@@ -19,13 +19,22 @@ body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "PingFang TC",
 .macro b{font-size:17px;font-variant-numeric:tabular-nums}
 .macro i{display:block;font-style:normal;color:var(--mute);font-size:11px}
 .banner{background:var(--warn);color:var(--warnink);padding:8px 16px;font-size:14px}
-.wrap{display:grid;grid-template-columns:210px 1fr;gap:16px;padding:16px;max-width:1240px;margin:0 auto}
-nav{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px;align-self:start}
-nav button{display:flex;justify-content:space-between;align-items:baseline;width:100%;text-align:left;background:none;border:0;border-radius:4px;padding:9px 10px;color:var(--ink);font:inherit;cursor:pointer}
-nav button small{color:var(--mute);font-size:12px}
-nav button:hover{background:var(--sel)}
-nav button[aria-pressed="true"]{background:var(--sel);box-shadow:inset 3px 0 0 var(--accent);font-weight:700}
-nav hr{border:0;border-top:1px solid var(--line);margin:6px 4px}
+.wrap{display:grid;grid-template-columns:1fr;gap:12px;padding:16px;max-width:1240px;margin:0 auto}
+nav{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.pick{display:flex;flex-direction:column;gap:3px;flex:1 1 260px}
+.pick span{color:var(--mute);font-size:12px}
+.pick select{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+nav button{font:inherit;padding:9px 16px;border:1px solid var(--line);border-radius:6px;background:none;color:var(--ink);cursor:pointer}
+nav button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.badge{display:inline-block;margin-left:6px;padding:0 6px;border-radius:9px;background:var(--sel);color:var(--accent);font-size:12px;font-weight:700;vertical-align:1px;cursor:help}
+.subtabs{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px}
+.subtabs button{font:inherit;font-size:14px;padding:4px 12px;border:1px solid var(--line);border-radius:14px;background:none;color:var(--mute);cursor:pointer}
+.subtabs button[aria-selected="true"]{background:var(--sel);color:var(--ink);border-color:var(--accent);font-weight:700}
+button.ghost2{font:inherit;padding:8px 14px;border:1px solid var(--line);border-radius:6px;background:none;color:var(--ink);cursor:pointer}
+.sbar{padding:12px 16px}
+.stabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.stabs button{font:inherit;padding:7px 14px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);cursor:pointer}
+.stabs button[aria-selected="true"]{border-color:var(--accent);box-shadow:inset 0 -3px 0 var(--accent);font-weight:700}
 button:focus-visible{outline:2px solid var(--accent)}
 .head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
 .head h1{font-size:26px;margin:0}.head .m{color:var(--mute)}
@@ -67,7 +76,7 @@ ul.pts li{padding:5px 0;border-bottom:1px solid var(--line);display:flex;gap:8px
 .fld{display:flex;flex-direction:column;gap:4px}
 .fld small{color:var(--mute);font-size:12px}
 .fld i{font-style:normal;color:var(--mute);font-size:12px}
-.fld input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+.fld select.sel,.fld input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
 .ro{padding:8px 10px;border-radius:6px;background:var(--sel);font-weight:700;font-variant-numeric:tabular-nums}
 .status{border-radius:6px;padding:12px 14px;margin-bottom:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--mute)}
 .status.hit{border-left-color:var(--up)}.status.warn{border-left-color:#e0a800}
@@ -75,7 +84,7 @@ button.pri{font:inherit;padding:8px 14px;border:0;border-radius:6px;background:v
 button.ghost{font:inherit;font-size:13px;padding:2px 8px;border:1px solid var(--line);border-radius:4px;background:none;color:var(--mute);cursor:pointer}
 table.lad tr.now td{background:var(--sel);font-weight:700}table.lad tr.est td{color:var(--mute)}.tabs button{white-space:nowrap}
 .big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
-@media (max-width:760px){.wrap{grid-template-columns:1fr}nav{display:flex;overflow-x:auto}nav button{flex:0 0 auto;width:auto;gap:8px}nav hr{display:none}.grid2{grid-template-columns:1fr}}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}nav button{flex:1 1 auto}}
 </style>
 </head>
 <body>
@@ -274,18 +283,28 @@ function pTech(s) {
   ${src(`來源：FinMind 日成交資料（未還原除權息）｜資料日 ${esc(s.quote?.date ?? "—")}｜每天 18:00 更新`)}</section>`;
 }
 
-const newsList = arr => arr?.length ? `<ul class="news">${arr.map(n => `<li>${n.link ? `<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a>` : esc(n.title)}<small>${esc(n.source)}｜${esc(n.date)}</small></li>`).join("")}</ul>` : `<p class="empty">目前沒有新聞</p>`;
+const newsList = arr => arr?.length ? `<ul class="news">${arr.map(n => {
+  const srcs = n.sources?.length ? n.sources : [n.source];
+  const badge = (n.n || 1) >= 2 ? `<span class="badge" title="${esc(srcs.join("、"))}">${n.n} 家報導</span>` : "";
+  return `<li>${n.link ? `<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a>` : esc(n.title)}${badge}<small>${esc(srcs.join("、"))}｜${esc(n.date)}</small></li>`;
+}).join("")}</ul>` : `<p class="empty">近 3 天沒有符合條件的新聞</p>`;
+let usTab = 0;
+function usNews() {
+  const T = D.us_news?.topics || [];
+  if (!T.length) return `<p class="empty">這次沒有抓到美國相關新聞</p>`;
+  return `<div class="subtabs">${T.map((t, i) => `<button data-us="${i}" aria-selected="${i === usTab}">${esc(t.name)}</button>`).join("")}</div>${newsList(T[Math.min(usTab, T.length - 1)].items)}`;
+}
 
 function pNews(s) {
-  return `<section><h2>相關新聞</h2><p class="tip">只列標題、時間與來源，不加利多／利空判斷。點標題看原文。</p>${newsList(s.news)}
-  ${src("來源：FinMind 新聞資料＋Google 新聞（近 3 天）｜去除重複後最多 8 則")}</section>
+  return `<section><h2>相關新聞</h2><p class="tip">只列標題、時間與來源，不加利多／利空判斷。點標題看原文；滑鼠移到「N 家報導」可看是哪幾家。</p>${newsList(s.news)}
+  ${src("來源：FinMind、鉅亨網、Google 新聞、台灣財經媒體 RSS｜驗證：標題須提到代號或名稱、只收可信媒體、近 3 天｜「N 家報導」代表多家媒體都有報導，可信度較高")}</section>
   ${s.kind === "個股" ? `<section><h2>公司重大訊息</h2><p class="tip">證交所公布的重大訊息主旨，只包含最近一個交易日。</p>${
     s.announce?.length ? `<ul class="news">${s.announce.map(a => `<li><details><summary>${esc(a.title)}<small>${esc(a.date)}${a.rule ? "｜" + esc(a.rule) : ""}</small></summary><p class="tip">${esc(a.desc)}</p></details></li>`).join("")}</ul>` : `<p class="empty">最近一個交易日沒有重大訊息</p>`}
     ${src("來源：證交所 OpenAPI（上市公司每日重大訊息）｜完整歷史請到公開資訊觀測站")}</section>` :
   `<section><h2>ETF 專屬</h2>${s.fund?.div?.upcoming?.length ? `<p class="tip"><b>配息公告：</b>${s.fund.div.upcoming.map(u => `${esc(u.ex)} 除息，每單位 ${f(u.cash, 3)} 元`).join("；")}</p>` : `<p class="tip">目前沒有查到已公告、尚未除息的配息。</p>`}
     <p class="tip">持股變化請看「基本面」的前十大持股（含資料日期）；規模變化、成分股調整公告請到投信官網查看${s.code === "00406A" ? "，00406A 另外留意經理人持股異動" : ""}。</p></section>`}
-  <section><h2>美國 AI 政策動態（所有標的相同）</h2><p class="tip">川普政府與民主黨：AI 資料中心相關政策與爭議。只列標題，政治立場不同的說法以同樣格式呈現。</p>
-  ${newsList(D.us_ai_news)}${src("來源：Google 新聞搜尋｜每天 07:00 更新｜標題來自各媒體，請點進原文確認")}</section>`;
+  <section><h2>美國相關新聞（台灣媒體，所有標的相同）</h2><p class="tip">台灣媒體報導的美國 AI、川普、經濟與熱門時事，只列標題。</p>
+  ${usNews()}${src("來源：Google 新聞中文搜尋＋台灣財經媒體 RSS｜只收可信媒體、近 2 天｜「N 家報導」代表多家媒體都有報導")}</section>`;
 }
 
 function pChips(s) {
@@ -320,9 +339,20 @@ async function sha256hex(t) {
   return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
 }
 const AUTH = {ready: !CLOUD, user: null, profile: null, data: null, users: null, err: ""};
+function sNorm(o) {
+  o = o || {};
+  if (!Array.isArray(o.strategies)) o = {strategies: [], active: null};   // 一開始沒有策略，要自己新增
+  return o;
+}
+const sName = x => (x && x.name && x.name.trim()) || (x ? `${x.target}策略` : "");   // 沒取名就叫「0050策略」
 function sLoad() {
-  if (CLOUD) return JSON.parse(JSON.stringify(AUTH.data || {}));
-  try { return JSON.parse(localStorage.getItem(skey()) || "null") || {}; } catch (e) { return {}; }
+  if (CLOUD) return sNorm(JSON.parse(JSON.stringify(AUTH.data || {})));
+  try { return sNorm(JSON.parse(localStorage.getItem(skey()) || "null")); } catch (e) { return sNorm(null); }
+}
+function curStrat(o) { o = o || sLoad(); return o.strategies.find(x => x.id === o.active) || o.strategies[0] || null; }
+function nextFifth(day) {
+  const t = new Date(), d = new Date(t.getFullYear(), t.getMonth() + (t.getDate() >= day ? 1 : 0), day);
+  return isoD(d);
 }
 function sSave(o) {
   if (CLOUD) {
@@ -378,14 +408,17 @@ const pad = n => (n < 10 ? "0" : "") + n;
 const isoD = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const money = v => isNum(v) ? Math.round(v).toLocaleString("en-US") : "—";
 
-function stratCalc() {
-  const st = D.strategy || {}, S = sLoad(), set = S.settings || {};
+function stratCalc(strat) {
+  const st0 = D.strategy || {};
+  strat = strat || curStrat() || {settings: {}, buys: [], target: st0.target};
+  const set = strat.settings || {};
+  const st = {...st0, target: strat.target, deposit_start: set.start || st0.deposit_start || ""};
   const g = (k, def) => { const v = parseFloat(set[k]); return isFinite(v) ? v : def; };
   const cfg = {
     base: g("base", st.base), dep: g("dep", st.monthly_deposit), pct: g("pct", st.batch_pct),
     pb: g("pb", st.pullback_pct), fpb: g("fpb", st.final_pullback_pct)
   };
-  const buys = (S.buys || []).slice().sort((a, b) => a.d < b.d ? -1 : 1);
+  const buys = (strat.buys || []).slice().sort((a, b) => a.d < b.d ? -1 : 1);
   const tgt = D.stocks.find(x => x.code === st.target), o = tgt?.tech?.ohlc || [];
   const dates = o.map(r => r[0]), closes = o.map(r => r[4]);
   const hd = st.high_days || 20, win = closes.slice(-hd);
@@ -411,29 +444,49 @@ function stratCalc() {
   const spent = buys.reduce((a, b) => a + b.p * b.s, 0), spentRound = round.reduce((a, b) => a + b.p * b.s, 0);
   let nd = 0;
   if (st.deposit_start) { const s0 = new Date(st.deposit_start + "T00:00:00"); let d = new Date(s0); while (d <= today) { nd++; d = new Date(s0.getFullYear(), s0.getMonth() + nd, s0.getDate()); } }
-  const bal = isNum(cfg.base) && isNum(cfg.dep) ? cfg.base + cfg.dep * nd - spent : null;
+  const bal = isNum(cfg.base) ? cfg.base + (isNum(cfg.dep) ? cfg.dep : 0) * nd - spent : null;
   const pool = isNum(bal) ? bal + spentRound : null;            // 本輪開始時的餘額
   const per = isNum(pool) && isNum(cfg.pct) ? pool * cfg.pct / 100 : null;
   let nextDep = null;
   if (st.deposit_start) { const s0 = new Date(st.deposit_start + "T00:00:00"); nextDep = s0 > today ? s0 : new Date(today.getFullYear(), today.getMonth() + (today.getDate() >= s0.getDate() ? 1 : 0), s0.getDate()); }
-  return {st, S, cfg, buys, round, n, NB, TOTAL, H, Hd, close, closeDate, gap, reset, ref, drop, trig, diff, bal, per, nextDep, nextReset, psISO, dates};
+  return {st, strat, tgt, cfg, buys, round, n, NB, TOTAL, H, Hd, close, closeDate, gap, reset, ref, drop, trig, diff, bal, per, nextDep, nextReset, psISO, dates};
 }
 
 function pStrategy() {
   if (LOCALLOGIN) {
     if (!LOCAL.user) return pLogin();
-    return `<div class="acct"><span>已登入：<b>${esc(LOCAL.user)}</b></span><button class="ghost" id="a_out">登出</button></div>` + pStrategyBody();
+    return `<div class="acct"><span>已登入：<b>${esc(LOCAL.user)}</b></span><button class="ghost" id="a_out">登出</button></div>` + pStrategyTabs();
   }
   if (CLOUD) {
     if (!AUTH.user) return pLogin();
     if (!AUTH.profile || !AUTH.data) return `<div class="head"><h1>我的策略</h1></div><section><p class="empty">${AUTH.err ? esc(AUTH.err) : "讀取你的策略資料中……"}</p></section>`;
     if (!AUTH.profile.active) return `<div class="head"><h1>我的策略</h1></div>${pAccountBar()}<section><p class="empty">這個帳號已被停用，請聯絡管理員。</p></section>`;
   }
-  return (CLOUD ? pAccountBar() : "") + pStrategyBody() + (CLOUD && AUTH.profile.role === "admin" ? pAdmin() : "");
+  return (CLOUD ? pAccountBar() : "") + pStrategyTabs() + (CLOUD && AUTH.profile.role === "admin" ? pAdmin() : "");
 }
 
-function pStrategyBody() {
-  const c = stratCalc(), st = c.st;
+let newStratOpen = false;
+function pStrategyTabs() {
+  const o = sLoad(), cs = curStrat(o), used = new Set(o.strategies.map(x => x.target));
+  const avail = D.stocks.filter(x => x.tech && !used.has(x.code));
+  const canAdd = o.strategies.length < 10 && avail.length > 0;
+  const bar = `<section class="sbar"><div class="grid4">
+    ${cs ? `<label class="fld"><small>選擇策略（${o.strategies.length} / 10）</small><select id="st_sel" class="sel">${
+      o.strategies.map(x => `<option value="${esc(x.id)}" ${x.id === cs.id ? "selected" : ""}>${esc(sName(x))}</option>`).join("")}</select></label>
+    <label class="fld"><small>策略名稱（可自己改）</small><input id="st_name" maxlength="20" value="${esc(cs.name || "")}" placeholder="${esc(cs.target)}策略"><i>改完按 Enter 儲存；清空就恢復「${esc(cs.target)}策略」</i></label>` : ""}
+    <div class="fld"><small>&nbsp;</small><div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${canAdd ? `<button id="st_new" class="${cs ? "ghost2" : "pri"}">＋ 新增策略</button>` : ""}
+      ${cs ? `<button id="st_delete" class="ghost2">刪除這個策略</button>` : ""}</div></div>
+  </div></section>`;
+  const form = (newStratOpen || !cs) && canAdd ? `<section><h2>新增策略</h2><p class="tip">只能選本網站有收錄、每天會更新資料的標的；每檔一個策略，最多 10 個。建立後可以改名字。</p>
+    <div class="grid4"><label class="fld"><small>選擇標的</small><select id="st_pick" class="sel">${avail.map(x => `<option value="${esc(x.code)}">${esc(x.code)}策略（${esc(x.name)}）</option>`).join("")}</select></label>
+    <div class="fld"><small>&nbsp;</small><button id="st_create" class="pri">建立策略</button></div></div></section>` : "";
+  if (!cs) return `<div class="head"><h1>我的策略</h1><span class="m">目前沒有任何策略，請先新增</span></div>${bar}${form}`;
+  return bar + form + pStrategyBody(cs);
+}
+
+function pStrategyBody(strat) {
+  const c = stratCalc(strat), st = c.st;
   const boughtToday = c.buys.some(b => b.d === isoD(new Date()));
   const label = i => i === c.NB ? `第 ${i + 1} 批（最後加碼）` : `第 ${i + 1} 批`;
   let msg, cls = "";
@@ -457,7 +510,7 @@ function pStrategyBody() {
   }
   const inp = (id, lab, val, note, step) => `<label class="fld"><small>${lab}</small><input id="${id}" type="number" step="${step}" value="${isNum(val) ? val : ""}" placeholder="請填寫"><i>${note}</i></label>`;
   const ro = (lab, val, note) => `<div class="fld"><small>${lab}</small><div class="ro">${val}</div><i>${note}</i></div>`;
-  return `<div class="head"><h1>我的策略</h1><span class="m">${esc(st.target)} 回檔加碼｜每月 ${st.reset_day} 號重置，最多 ${c.NB} 批＋最後加碼 1 批</span></div>
+  return `<div class="head"><h1>${esc(sName(c.strat))}</h1><span>${esc(st.target)} ${esc(c.tgt?.name ?? "")}</span><span class="m">回檔加碼｜每月 ${st.reset_day} 號重置，最多 ${c.NB} 批＋最後加碼 1 批</span></div>
   <div class="status ${cls}">${msg}</div>
   <section><h2>目前數字</h2><p class="tip">這區由程式自動計算，不能修改。</p><div class="grid4">
     ${ro(`前 ${st.high_days} 個交易日最高收盤（H）`, f(c.H), `最高在 ${esc(c.Hd ?? "—")}`)}
@@ -470,7 +523,8 @@ function pStrategyBody() {
   </div></section>
   <section><h2>加碼金</h2>${CLOUD ? `<p class="tip">這區的數字存在你的帳號裡，換裝置登入也會一樣。</p>` : st.public ? `<p class="tip">公開網頁不放你的金額，請在這台裝置填一次，只會存在這個瀏覽器裡。</p>` : ""}<div class="grid4">
     ${inp("s_base", "起算加碼金（元）", c.cfg.base, "", 100)}
-    ${inp("s_dep", "每月 5 號入帳（元）", c.cfg.dep, `${esc(st.deposit_start ?? "")} 起`, 500)}
+    ${inp("s_dep", "每月 5 號入帳（元）", c.cfg.dep, "", 500)}
+    <label class="fld"><small>入帳起始日</small><input id="s_start" type="date" value="${esc(st.deposit_start || "")}"><i>從這天起每月入帳</i></label>
     ${inp("s_pct", "每批比例（%）", c.cfg.pct, "本輪開始時餘額 × 比例", 1)}
     ${inp("s_pb", "第 1–6 批回檔（%）", c.cfg.pb, "", 0.5)}
     ${inp("s_fpb", "最後加碼回檔（%）", c.cfg.fpb, "比第 6 批成交價再跌", 0.5)}
@@ -544,9 +598,29 @@ function bindStrategy() {
     });
   }
   const S = () => sLoad();
-  [["s_base", "base"], ["s_dep", "dep"], ["s_pct", "pct"], ["s_pb", "pb"], ["s_fpb", "fpb"]].forEach(([id, k]) => {
+  const withCur = fn => { const o = S(), cs = curStrat(o); if (!cs) return; fn(cs, o); sSave(o); render(); };
+  if ($("st_sel")) $("st_sel").onchange = e => { const o = S(); o.active = e.target.value; newStratOpen = false; sSave(o); render(); };
+  if ($("st_name")) {
+    const el = $("st_name");
+    el.onkeydown = e => { if (e.key === "Enter") el.blur(); };
+    el.onchange = () => withCur(cs => { cs.name = el.value.trim().slice(0, 20); });
+  }
+  if ($("st_new")) $("st_new").onclick = () => { newStratOpen = !newStratOpen; render(); };
+  if ($("st_create")) $("st_create").onclick = () => {
+    const o = S(), code = $("st_pick").value;
+    if (!code || o.strategies.length >= 10 || o.strategies.some(x => x.target === code)) return;
+    const id = "s" + Date.now();
+    o.strategies.push({id, name: "", target: code, settings: {start: nextFifth((D.strategy || {}).reset_day || 5)}, buys: []});
+    o.active = id; newStratOpen = false; sSave(o); render();
+  };
+  if ($("st_delete")) $("st_delete").onclick = () => {
+    const o = S(), cs = curStrat(o); if (!cs) return;
+    if (!confirm(`確定刪除「${sName(cs)}」？設定和買進紀錄都會一起刪除，無法復原。`)) return;
+    o.strategies = o.strategies.filter(x => x.id !== cs.id); o.active = o.strategies[0]?.id || null; sSave(o); render();
+  };
+  [["s_base", "base"], ["s_dep", "dep"], ["s_pct", "pct"], ["s_pb", "pb"], ["s_fpb", "fpb"], ["s_start", "start"]].forEach(([id, k]) => {
     const el = document.getElementById(id); if (!el) return;
-    el.onchange = () => { const o = S(); o.settings = o.settings || {}; o.settings[k] = el.value; sSave(o); render(); };
+    el.onchange = () => withCur(cs => { cs.settings = cs.settings || {}; cs.settings[k] = el.value; });
   });
   const add = document.getElementById("b_add");
   if (add) add.onclick = () => {
@@ -555,11 +629,11 @@ function bindStrategy() {
     if (!d || !(p > 0) || !(s > 0)) { msg.textContent = "請填日期、成交均價和股數。"; return; }
     if (c.buys.some(b => b.d === d)) { msg.textContent = "這一天已有買進紀錄，一天最多一批。"; return; }
     if (d >= c.psISO && c.n >= c.TOTAL) { msg.textContent = "本輪已完成 7 批，要等下次重置。"; return; }
-    const o = S(); o.buys = o.buys || []; o.buys.push({d, p, s, t: c.n < c.TOTAL ? c.trig : null}); sSave(o); render();
+    withCur(cs => { cs.buys = cs.buys || []; cs.buys.push({d, p, s, t: c.n < c.TOTAL ? c.trig : null}); });
   };
   document.querySelectorAll("[data-del]").forEach(btn => btn.onclick = () => {
     if (!confirm("確定刪除這筆買進紀錄？")) return;
-    const o = S(); o.buys = (o.buys || []).filter(b => b.d !== btn.dataset.del); sSave(o); render();
+    withCur(cs => { cs.buys = (cs.buys || []).filter(b => b.d !== btn.dataset.del); });
   });
 }
 
@@ -569,6 +643,14 @@ function pAnalysis(s) {
   const icon = {up: ["▲", "var(--up)", "偏強"], down: ["▼", "var(--down)", "偏弱"], mid: ["●", "var(--mute)", "中性"]};
   const list = (k, title, note) => (A[k] && A[k].length) ? `<h3>${title}</h3>${note ? `<p class="tip">${note}</p>` : ""}<ul class="pts">${
     A[k].map(x => `<li><span title="${icon[x.tone][2]}" style="color:${icon[x.tone][1]}">${icon[x.tone][0]}</span>${esc(x.text)}</li>`).join("")}</ul>` : "";
+  const canSee = CLOUD ? !!(AUTH.user && AUTH.data && AUTH.profile?.active) : (!LOCALLOGIN || !!LOCAL.user);
+  const mine = canSee ? sLoad().strategies.filter(x => x.target === s.code) : [];
+  A.strategy = [];
+  mine.forEach(m => {
+    const c = stratCalc(m);
+    if (c.n >= c.TOTAL) A.strategy.push({tone: "mid", text: `「${m.name}」本輪 ${c.TOTAL} 批已完成，${isoD(c.nextReset)} 重置。`});
+    else if (isNum(c.trig)) A.strategy.push({tone: "mid", text: `「${m.name}」第 ${c.n + 1} 批觸發價 ${f(c.trig)}，最新收盤距離 ${isNum(c.diff) ? sg(c.diff) + "%" : "—"}${isNum(c.diff) && c.diff <= 0 ? "，已低於觸發價" : ""}。`});
+  });
   let h = `<section><h2>綜合分析</h2><p class="tip">把四個面向的數字整理成白話重點。▲ 偏強、▼ 偏弱、● 中性，只描述現況，不代表買賣建議，也不能預測明天。</p>
     <p class="big2">${esc(A.summary ?? "")}</p>
     ${list("strategy", "和你的策略")}
@@ -594,12 +676,17 @@ function render() {
     <div class="tabs" role="tablist">${TABS.map((t, i) => `<button role="tab" aria-selected="${i === tab}" data-t="${i}">${t}</button>`).join("")}</div>
     ${[pFund, pTech, pNews, pChips, pAnalysis][tab](s)}`;
   v.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { tab = +b.dataset.t; render(); });
+  v.querySelectorAll("[data-us]").forEach(b => b.onclick = () => { usTab = +b.dataset.us; render(); });
 }
+let lastStock = 0;
 function renderNav() {
   const nav = document.getElementById("list");
-  nav.innerHTML = D.stocks.map((s, i) => `<button data-i="${i}" aria-pressed="${i === cur}"><span>${esc(s.code)}</span><small>${esc(s.name)}</small></button>`).join("")
-    + `<hr><button data-i="-1" aria-pressed="${cur === -1}"><span>我的策略</span><small>${esc(D.strategy?.target ?? "")}</small></button>`;
-  nav.querySelectorAll("button").forEach(b => b.onclick = () => { cur = +b.dataset.i; renderNav(); render(); });
+  const opt = kind => D.stocks.map((s, i) => s.kind === kind ? `<option value="${i}" ${i === lastStock ? "selected" : ""}>${esc(s.code)}　${esc(s.name)}</option>` : "").join("");
+  nav.innerHTML = `<label class="pick"><span>選擇標的</span><select id="pick"><optgroup label="ETF">${opt("ETF")}</optgroup><optgroup label="個股">${opt("個股")}</optgroup></select></label>
+    <button id="go-stock" aria-pressed="${cur !== -1}">個股分析</button><button id="go-strat" aria-pressed="${cur === -1}">我的策略</button>`;
+  document.getElementById("pick").onchange = e => { cur = lastStock = +e.target.value; renderNav(); render(); };
+  document.getElementById("go-stock").onclick = () => { cur = lastStock; renderNav(); render(); };
+  document.getElementById("go-strat").onclick = () => { cur = -1; renderNav(); render(); };
 }
 function showErr(msg) {
   document.getElementById("banner").insertAdjacentHTML("beforeend", `<div class="banner">頁面顯示出錯：${esc(msg)}（請把這行文字貼給 Claude）</div>`);
@@ -629,7 +716,7 @@ async function fbInit() {
     login: (u, p) => A.signInWithEmailAndPassword(auth, email(u), p),
     logout: () => A.signOut(auth),
     saveStrategy: o => F.setDoc(F.doc(db, "strategies", auth.currentUser.uid),
-      { settings: o.settings || {}, buys: o.buys || [], updated: F.serverTimestamp() }),
+      { strategies: o.strategies || [], active: o.active || null, updated: F.serverTimestamp() }),
     changePassword: async (oldPw, newPw) => {
       const cred = A.EmailAuthProvider.credential(auth.currentUser.email, oldPw);
       await A.reauthenticateWithCredential(auth.currentUser, cred);

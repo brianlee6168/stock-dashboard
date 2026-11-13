@@ -30,9 +30,11 @@ FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN") or ""   # 在自己電腦跑才�
 
 STOCKS = [
     ("0050",   "元大台灣50",       "ETF"),
+    ("006208", "富邦台50",         "ETF"),
     ("00919",  "群益台灣精選高息", "ETF"),
     ("00918",  "大華優利高填息30", "ETF"),
     ("00406A", "主動中信台灣收益", "ETF"),
+    ("00981A", "主動統一台股增長", "ETF"),
     ("2330",   "台積電",           "個股"),
     ("2454",   "聯發科",           "個股"),
     ("2360",   "致茂",             "個股"),
@@ -45,12 +47,12 @@ MANUAL = {
     "非農新增就業": "",    # 自動抓不到時才用，例如 "+11.9 萬人"
 }
 
-# 「我的策略」頁的參數（0050 回檔加碼）。買進紀錄存在你自己的瀏覽器裡，不會放上網。
+# 「我的策略」新增策略時的預設參數。每個人可以替任何一檔已收錄的標的新增策略，各自調整。
 STRATEGY = {
-    "target": "0050",            # 套用策略的標的
+    "target": "0050",            # 舊資料轉換時預設的標的
     "base": 40000,               # 起算加碼金（元）
     "monthly_deposit": 15000,    # 每月 5 號入帳（元）
-    "deposit_start": "2026-12-05",
+    "deposit_start": "",         # 留空＝新增策略後的下一個 5 號開始入帳
     "batch_pct": 15,             # 每批金額 ＝ 本輪開始時的加碼金餘額 × 15%
     "pullback_pct": 5,           # 第 1–6 批：比參考價再跌 5% 觸發
     "final_pullback_pct": 10,    # 第 7 批（最後加碼）：比第 6 批成交價再跌 10% 觸發
@@ -78,8 +80,44 @@ LOCAL_SALT = "stock-analysis-v1"
 USER_EMAIL_DOMAIN = "users.example.com"   # 帳號會在背後轉成 帳號@這個網域，使用者只需要輸入帳號
 MAX_USERS = 10                      # 管理員以外，最多幾個使用者
 
-# 美國 AI 政策新聞的搜尋關鍵字（Google 新聞）
-US_AI_QUERY = '"data center" AI (Trump OR Democrats OR Congress) policy'
+# 新聞比對用的別名：標題裡出現代號、名稱或別名，才算是這檔的新聞
+ALIASES = {
+    "0050": ["元大台灣50", "元大台灣卓越50"],
+    "006208": ["富邦台50", "富邦台灣50"],
+    "00919": ["群益台灣精選高息", "群益精選高息"],
+    "00918": ["大華優利高填息30", "大華優利高填息"],
+    "00406A": ["主動中信台灣收益", "中信台灣收益"],
+    "00981A": ["主動統一台股增長", "統一台股增長"],
+    "2330": ["台積電", "TSMC"],
+    "2454": ["聯發科", "MediaTek"],
+    "2360": ["致茂", "Chroma"],
+}
+
+# 只採用這些媒體的新聞（名稱包含其中任一個字串即可）
+TRUSTED_SOURCES = ["中央社", "中央通訊社", "經濟日報", "工商時報", "鉅亨", "Anue", "自由", "聯合新聞網", "聯合報",
+                   "Yahoo", "MoneyDJ", "財訊", "商業周刊", "商周", "天下", "數位時代", "今周刊", "ETtoday",
+                   "中時", "中國時報", "風傳媒", "TVBS", "三立", "科技新報", "財經新報", "鏡週刊", "鏡報",
+                   "NOWnews", "CMoney", "民視", "公視", "非凡", "東森", "華視", "台視", "中視", "Smart",
+                   "理財周刊", "動區", "INSIDE", "iThome", "DIGITIMES", "MoneyDJ理財網"]
+
+# 美國相關新聞（台灣媒體，Google 新聞中文搜尋）：分頁名稱 → 搜尋關鍵字
+US_TOPICS = [
+    ("AI", "(美國 OR 美) (AI OR 人工智慧 OR 輝達 OR OpenAI OR 資料中心 OR 晶片)"),
+    ("川普", "川普"),
+    ("經濟", "(聯準會 OR 美國經濟 OR 美股 OR 美債 OR 通膨 OR 非農 OR 關稅)"),
+    ("熱門", "美國"),
+]
+
+# 台灣財經媒體 RSS（每次執行抓一次，用來補充個股與美國新聞）
+TW_RSS = [
+    ("中央社", "https://feeds.feedburner.com/rsscna/finance"),
+    ("經濟日報", "https://money.udn.com/rssfeed/news/1001/5591?ch=money"),
+    ("經濟日報", "https://money.udn.com/rssfeed/news/1001/10846?ch=money"),
+    ("自由財經", "https://news.ltn.com.tw/rss/business.xml"),
+    ("Yahoo股市", "https://tw.news.yahoo.com/rss/finance"),
+    ("ETtoday財經", "https://feeds.feedburner.com/ettoday/finance"),
+    ("財經新報", "https://finance.technews.tw/feed/"),
+]
 
 # AI 解讀（Google Gemini 免費 API）。金鑰放在 GitHub Secrets 的 GEMINI_API_KEY；
 # 在自己電腦跑可以把金鑰貼在最後的引號裡。沒有金鑰時只顯示規則整理。
@@ -313,7 +351,110 @@ def gnews(query, n=8, lang="zh"):
     return out
 
 
-def fetch_news(code, name, limit=8):
+def trusted(src):
+    return any(t.lower() in (src or "").lower() for t in TRUSTED_SOURCES)
+
+
+def _bigrams(t):
+    t = re.sub(r"[\W_]+", "", (t or "").lower())
+    return {t[i:i + 2] for i in range(len(t) - 1)}
+
+
+def group_news(items, limit):
+    """把不同媒體報導的同一則新聞合併，記錄有幾家媒體報導，作為交叉驗證。"""
+    groups = []
+    for it in sorted(items, key=lambda x: x["date"], reverse=True):
+        bg = _bigrams(it["title"])
+        if len(bg) < 4:
+            continue
+        hit = None
+        for g in groups:
+            inter = len(bg & g["_bg"])
+            if inter / max(1, min(len(bg), len(g["_bg"]))) >= 0.6:
+                hit = g
+                break
+        if hit:
+            if it["source"] and it["source"] not in hit["sources"]:
+                hit["sources"].append(it["source"])
+        else:
+            groups.append({**it, "sources": [it["source"]] if it["source"] else [], "_bg": bg})
+    for g in groups:
+        g.pop("_bg", None)
+        g["n"] = len(g["sources"])
+    return groups[:limit]
+
+
+_RSS_CACHE = None
+
+
+def fetch_tw_rss():
+    """抓台灣財經媒體的 RSS，整次執行只抓一次。"""
+    global _RSS_CACHE
+    if _RSS_CACHE is not None:
+        return _RSS_CACHE
+    out = []
+    for name, url in TW_RSS:
+        try:
+            root = ET.fromstring(get_retry(url, tries=2).content)
+        except Exception as e:
+            log(f"  （RSS {name} 沒抓到：{str(e)[:50]}）")
+            continue
+        for it in root.iter("item"):
+            when = it.findtext("pubDate") or ""
+            try:
+                when = parsedate_to_datetime(when).astimezone(TW).strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                continue
+            out.append({"date": when, "title": (it.findtext("title") or "").strip(),
+                        "source": name, "link": (it.findtext("link") or "").strip()})
+    _RSS_CACHE = out
+    return out
+
+
+def cnyes_news(q, n=20):
+    """鉅亨網公開的新聞關鍵字搜尋。"""
+    r = requests.get("https://ess.api.cnyes.com/ess/api/v1/news/keyword",
+                     params={"q": q, "limit": n, "page": 1},
+                     headers={**UA, "Origin": "https://news.cnyes.com", "Referer": "https://news.cnyes.com/"}, timeout=20)
+    r.raise_for_status()
+    found = []
+
+    def walk(x):
+        if isinstance(x, dict):
+            if "title" in x and ("newsId" in x or "id" in x):
+                found.append(x)
+            else:
+                for v in x.values():
+                    walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+    walk(r.json())
+    out = []
+    for d in found:
+        ts = d.get("publishAt") or d.get("publish_at")
+        try:
+            when = dt.datetime.fromtimestamp(int(ts), TW).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            continue
+        nid = d.get("newsId") or d.get("id")
+        out.append({"date": when, "title": re.sub(r"<[^>]+>", "", str(d.get("title", ""))).strip(),
+                    "source": "鉅亨網", "link": f"https://news.cnyes.com/news/id/{nid}",
+                    "tags": [str(t) for t in (d.get("stock") or [])]})
+    return out
+
+
+def mentions(title, code, name):
+    """標題是否真的提到這檔：代號（前後不能接數字）、名稱或別名。"""
+    t = title or ""
+    if re.search(rf"(?<![0-9A-Za-z]){re.escape(code)}(?![0-9A-Za-z])", t, re.I):
+        return True
+    return any(a.lower() in t.lower() for a in [name] + ALIASES.get(code, []))
+
+
+def fetch_news(code, name, limit=10):
+    """多個來源合併：FinMind、鉅亨網、Google 新聞、台灣財經媒體 RSS。
+    驗證方式：只留標題確實提到這檔的新聞、只留可信媒體、只留近 3 天，並標出幾家媒體同時報導。"""
     items = []
     for i in range(3):
         day = (TODAY - dt.timedelta(days=i)).isoformat()
@@ -323,15 +464,18 @@ def fetch_news(code, name, limit=8):
         for r in n.itertuples():
             items.append({"date": str(r.date)[:16], "title": str(getattr(r, "title", "")).strip(),
                           "source": str(getattr(r, "source", "")), "link": str(getattr(r, "link", ""))})
-    items += safe(f"{code} Google 新聞", lambda: gnews(f'"{name}" OR "{code}" when:3d', n=10), []) or []
-    seen, out = set(), []
-    for it in sorted(items, key=lambda x: x["date"], reverse=True):
-        key = re.sub(r"\W", "", it["title"])[:30]
-        if not it["title"] or key in seen:
-            continue
-        seen.add(key)
-        out.append(it)
-    return out[:limit]
+    for q in dict.fromkeys([name, code]):
+        for it in safe(f"{code} 鉅亨網新聞（{q}）", lambda: cnyes_news(q), []) or []:
+            if mentions(it["title"], code, name) or code in it.get("tags", []):
+                items.append(it)
+    items += safe(f"{code} Google 新聞", lambda: gnews(f'"{name}" OR "{code}" when:3d', n=15), []) or []
+    items += fetch_tw_rss()
+
+    since = (NOW - dt.timedelta(days=3)).strftime("%Y-%m-%d %H:%M")
+    ok = [it for it in items if it["title"] and it["date"] >= since
+          and (it["source"] == "鉅亨網" or mentions(it["title"], code, name))
+          and (trusted(it["source"]) or it["source"] == "")]
+    return group_news(ok, limit)
 
 
 def roc_date(sv):
@@ -673,30 +817,39 @@ def fetch_macro():
     return mc
 
 
-def fetch_us_ai_news():
-    out = gnews(US_AI_QUERY + " when:3d", n=8, lang="en")
-    for o in out:
-        o["date"] = o["date"][5:]
-    return out
+US_KEYWORDS = {
+    "AI": ["AI", "人工智慧", "輝達", "NVIDIA", "OpenAI", "資料中心", "晶片"],
+    "川普": ["川普", "Trump"],
+    "經濟": ["聯準會", "Fed", "美國經濟", "美股", "美債", "通膨", "非農", "關稅", "降息", "升息"],
+    "熱門": [],
+}
+
+
+def fetch_us_news():
+    """台灣媒體報導的美國相關新聞，依主題分組。"""
+    rss_us = [it for it in fetch_tw_rss() if re.search(r"美國|美股|川普|聯準會|白宮|華爾街|美債|美元", it["title"])]
+    since = (NOW - dt.timedelta(days=2)).strftime("%Y-%m-%d %H:%M")
+    topics, used = [], set()
+    for name, q in US_TOPICS:
+        items = safe(f"美國新聞（{name}）", lambda: gnews(f"{q} when:2d", n=25), []) or []
+        kws = US_KEYWORDS.get(name, [])
+        items += [it for it in rss_us if not kws or any(k.lower() in it["title"].lower() for k in kws)]
+        items = [it for it in items if it["date"] >= since and trusted(it["source"])]
+        grouped = [g for g in group_news(items, 20) if g["title"] not in used][:6]
+        used.update(g["title"] for g in grouped)
+        topics.append({"name": name, "items": grouped})
+    return {"topics": topics}
 
 
 # ---------------------------------------------------------------------
 # 策略頁
 # ---------------------------------------------------------------------
-def build_strategy(price_df):
+def build_strategy(price_df=None):
+    """策略預設值；實際計算在網頁上，依每個人自己新增的策略進行。"""
     st = dict(STRATEGY)
-    if "--public" in sys.argv:          # 公開網頁不放金額，第一次打開時在自己的瀏覽器填一次
+    if "--public" in sys.argv:          # 公開網頁不放金額
         st["base"] = st["monthly_deposit"] = None
         st["public"] = True
-    if price_df is None or price_df.empty:
-        return st
-    c = price_df.set_index("date")["close"]
-    look = c.tail(int(st["high_days"]))
-    H = float(look.max())
-    trig = H * (1 - st["pullback_pct"] / 100)
-    st.update({"H": num(H, 2), "H_date": look.idxmax(), "trigger": num(trig, 2),
-               "close": num(c.iloc[-1], 2), "close_date": c.index[-1],
-               "gap_pct": num((c.iloc[-1] / trig - 1) * 100, 2)})
     return st
 
 
@@ -716,7 +869,7 @@ def demo_price(base):
 
 
 def demo_stock(code, name, kind):
-    df = demo_price({"0050": 60, "00919": 22, "00918": 24, "00406A": 10,
+    df = demo_price({"0050": 60, "006208": 140, "00981A": 25, "00919": 22, "00918": 24, "00406A": 10,
                      "2330": 1400, "2454": 1300, "2360": 480}.get(code, 100))
     s = {"code": code, "name": name, "kind": kind, "tech": build_tech(df), "_df": df}
     last = df.iloc[-1]
@@ -747,7 +900,7 @@ def demo_stock(code, name, kind):
     else:
         s["announce"] = [{"date": f"{last.date} 17:30", "title": "（示範）公告本公司董事會決議股利分派", "rule": "第14款", "desc": "（示範）說明文字"}]
     s["news"] = [{"date": f"{last.date} 1{i}:00", "title": f"（示範）{name} 相關新聞標題 {i + 1}",
-                  "source": "示範來源", "link": ""} for i in range(5)]
+                  "source": "鉅亨網", "link": "", "sources": ["鉅亨網", "經濟日報", "中央社"][: 1 + i % 3], "n": 1 + i % 3} for i in range(5)]
     return s
 
 
@@ -915,12 +1068,6 @@ def build_analysis(s, macro, strategy):
         if len(ser) > 5:
             ch30 = (ser[-1] / ser[0] - 1) * 100
             add("macro", "mid", f"新台幣近 30 天{'貶值' if ch30 > 0 else '升值'} {abs(ch30):.1f}%（USD/TWD {ser[-1]:.2f}）。")
-
-    # ---- 策略連動 ----
-    if s["code"] == strategy.get("target") and strategy.get("trigger"):
-        g = strategy.get("gap_pct")
-        add("strategy", "mid", f"以 H（近 {strategy['high_days']} 個交易日最高收盤 {strategy['H']:g}）計算的第 1 批觸發價 {strategy['trigger']:g}，"
-            f"收盤距離 {g:+.2f}%。已有買進紀錄時，實際觸發價以「我的策略」頁為準。")
 
     up = sum(1 for k in ("tech", "chips") for x in A[k] if x["tone"] == "up")
     dn = sum(1 for k in ("tech", "chips") for x in A[k] if x["tone"] == "down")
@@ -1095,7 +1242,7 @@ def add_analysis(data):
         if not data.get("demo"):
             s["ai"] = ai_comment(s, s["analysis"])
             if GEMINI_API_KEY and i < len(data["stocks"]) - 1:
-                time.sleep(4)   # 免費額度有每分鐘次數限制，間隔幾秒
+                time.sleep(5)   # 免費額度每分鐘最多 15 次，間隔 5 秒＝每分鐘最多 12 次
     data["ai_enabled"] = bool(GEMINI_API_KEY) or bool(data.get("ai_error"))
 
 
@@ -1135,8 +1282,9 @@ def main():
                          "nfp": {"value": "+11.9 萬人", "chg_raw": 119, "date": "示範"},
                          "light": {"value": "黃紅燈 35 分", "score": 35, "date": "示範",
                                    "hist": [["2026-04", 33], ["2026-05", 34], ["2026-06", 36], ["2026-07", 35], ["2026-08", 37], ["2026-09", 35]]}}
-        data["us_ai_news"] = [{"date": "11-11 08:00", "title": f"（示範）美國 AI 資料中心政策新聞 {i + 1}",
-                               "source": "示範來源", "link": ""} for i in range(5)]
+        data["us_news"] = {"topics": [{"name": t, "items": [{"date": "2026-11-12 08:00", "title": f"（示範）{t} 相關新聞 {i + 1}",
+                                                              "source": "中央社", "link": "", "sources": ["中央社", "經濟日報"][: 1 + i % 2], "n": 1 + i % 2}
+                                                             for i in range(4)]} for t, _ in US_TOPICS]}
     else:
         for code, name, kind in STOCKS:
             log(f"抓取 {code} {name}……")
@@ -1166,8 +1314,8 @@ def main():
         add_overlap(data["stocks"])
         log("抓取總經與匯率……")
         data["macro"] = fetch_macro()
-        log("抓取美國 AI 政策新聞……")
-        data["us_ai_news"] = safe("美國 AI 新聞", fetch_us_ai_news, [])
+        log("抓取美國相關新聞……")
+        data["us_news"] = safe("美國相關新聞", fetch_us_news, {"topics": []})
 
     data["strategy"] = build_strategy(strat_df)
     log("整理綜合分析……" + ("（含 AI 解讀）" if GEMINI_API_KEY and not demo else ""))
