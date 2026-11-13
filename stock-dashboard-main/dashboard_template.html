@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>選股分析</title>
+<style>
+:root{--bg:#eef1f4;--panel:#fff;--ink:#1d2733;--mute:#66727f;--line:#d5dbe1;--accent:#1f5f7a;--sel:#e3eef3;
+--up:#c62828;--down:#1b7a3d;--ma5:#e08a00;--ma20:#2f6fd1;--ma60:#8a46b8;--bb:#9aa6b2;--warn:#fff4d6;--warnink:#6b5200}
+@media (prefers-color-scheme:dark){:root{--bg:#12181e;--panel:#1b232b;--ink:#e6ebf0;--mute:#93a0ad;--line:#2c3742;
+--accent:#6db6d4;--sel:#233644;--up:#ef5350;--down:#4cc17a;--ma5:#f2a93b;--ma20:#6aa3ff;--ma60:#c08ae6;--bb:#6b7784;
+--warn:#3a3218;--warnink:#f0d78a;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif}
+.up{color:var(--up)}.down{color:var(--down)}
+.topnav{display:flex;align-items:center;gap:6px;padding:12px 16px 0;max-width:1240px;margin:0 auto;flex-wrap:wrap}
+.topnav b{font-size:17px;margin-right:10px}
+.topnav button{font:inherit;font-size:15px;padding:7px 18px;border:1px solid var(--line);border-radius:18px;background:var(--panel);color:var(--ink);cursor:pointer}
+.topnav button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.macro{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);display:flex;overflow-x:auto}
+.macro .c{flex:1 0 150px;padding:8px 14px;border-right:1px solid var(--line);cursor:help}
+.macro small{display:block;color:var(--mute);font-size:12px}
+.macro b{font-size:17px;font-variant-numeric:tabular-nums}
+.macro i{display:block;font-style:normal;color:var(--mute);font-size:11px}
+.banner{background:var(--warn);color:var(--warnink);padding:8px 16px;font-size:14px}
+.wrap{display:grid;grid-template-columns:1fr;gap:12px;padding:16px;max-width:1240px;margin:0 auto}
+nav{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.pick{display:flex;flex-direction:column;gap:3px;flex:1 1 260px}
+.pick span{color:var(--mute);font-size:12px}
+.pick select{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+nav button{font:inherit;padding:9px 16px;border:1px solid var(--line);border-radius:6px;background:none;color:var(--ink);cursor:pointer}
+nav button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.badge{display:inline-block;margin-left:6px;padding:0 6px;border-radius:9px;background:var(--sel);color:var(--accent);font-size:12px;font-weight:700;vertical-align:1px;cursor:help}
+.subtabs{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px}
+.subtabs button{font:inherit;font-size:14px;padding:4px 12px;border:1px solid var(--line);border-radius:14px;background:none;color:var(--mute);cursor:pointer}
+.subtabs button[aria-selected="true"]{background:var(--sel);color:var(--ink);border-color:var(--accent);font-weight:700}
+button.ghost2{font:inherit;padding:8px 14px;border:1px solid var(--line);border-radius:6px;background:none;color:var(--ink);cursor:pointer}
+.sbar{padding:12px 16px}
+.stabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.stabs button{font:inherit;padding:7px 14px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);cursor:pointer}
+.stabs button[aria-selected="true"]{border-color:var(--accent);box-shadow:inset 0 -3px 0 var(--accent);font-weight:700}
+button:focus-visible{outline:2px solid var(--accent)}
+.head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.head h1{font-size:26px;margin:0}.head .m{color:var(--mute)}
+.head .px{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:8px 16px;font:inherit;color:var(--mute);cursor:pointer}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:700}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;margin-bottom:12px}
+h2{font-size:16px;margin:0 0 8px;color:var(--accent)}
+h3{font-size:14px;margin:14px 0 4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 16px}
+.kv div small{display:block;color:var(--mute);font-size:12px}
+.kv div b{font-size:17px;font-variant-numeric:tabular-nums}
+.tip{color:var(--mute);font-size:13px;margin:2px 0 6px}
+.src{color:var(--mute);font-size:12px;margin:10px 0 0;border-top:1px dashed var(--line);padding-top:6px}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mute);font-weight:500}
+svg{width:100%;height:auto;display:block}
+svg text{fill:var(--mute);font-size:11px}
+.legend{font-size:12px;color:var(--mute);display:flex;gap:12px;flex-wrap:wrap}
+.legend span::before{content:"";display:inline-block;width:14px;height:3px;margin-right:4px;vertical-align:middle;background:var(--c)}
+ul.news{list-style:none;padding:0;margin:0}
+ul.news li{padding:6px 0;border-bottom:1px solid var(--line)}
+ul.news li small{color:var(--mute);margin-left:6px}
+ul.news summary{cursor:pointer}
+ul.news a{color:var(--ink)}
+.empty{color:var(--mute);font-size:14px}
+ul.pts{list-style:none;padding:0;margin:0 0 6px}
+ul.pts li{padding:5px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:baseline}
+.big2{font-size:16px;font-weight:700;margin:4px 0 6px}
+.ai{line-height:1.8;background:var(--sel);border-radius:6px;padding:12px 14px}
+.tabs{overflow-x:auto}
+.acct{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:10px;font-size:14px}
+.grid4{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px 16px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld small{color:var(--mute);font-size:12px}
+.fld i{font-style:normal;color:var(--mute);font-size:12px}
+.fld select.sel,.fld input{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+.ro{padding:8px 10px;border-radius:6px;background:var(--sel);font-weight:700;font-variant-numeric:tabular-nums}
+.status{border-radius:6px;padding:12px 14px;margin-bottom:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--mute)}
+.status.hit{border-left-color:var(--up)}.status.warn{border-left-color:#e0a800}
+button.pri{font:inherit;padding:8px 14px;border:0;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer}
+button.ghost{font:inherit;font-size:13px;padding:2px 8px;border:1px solid var(--line);border-radius:4px;background:none;color:var(--mute);cursor:pointer}
+table.lad tr.now td{background:var(--sel);font-weight:700}table.lad tr.est td{color:var(--mute)}.tabs button{white-space:nowrap}
+.big{font-size:28px;font-weight:700;font-variant-numeric:tabular-nums}
+@media (max-width:760px){.grid2{grid-template-columns:1fr}nav button{flex:1 1 auto}}
+</style>
+</head>
+<body>
+<header class="macro" id="macro" aria-label="總經與匯率"></header>
+<div id="banner"></div>
+<div class="topnav" id="topnav" role="tablist" aria-label="功能選單"></div>
+<main class="wrap">
+<nav id="list" aria-label="選擇標的"></nav>
+<div id="view"></div>
+</main>
+<script>
+const D = __DATA__;
+const TABS = ["基本面","技術面","消息面","籌碼面","綜合分析"];
+let cur = 0, tab = 0;
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const isNum = v => v !== null && v !== undefined && !isNaN(v);
+const f = (v, d = 2) => isNum(v) ? Number(v).toLocaleString("zh-TW", {minimumFractionDigits: d, maximumFractionDigits: d}) : "—";
+const sg = (v, d = 2) => isNum(v) ? (v > 0 ? "+" : "") + f(v, d) : "—";
+const cl = v => isNum(v) ? (v > 0 ? "up" : v < 0 ? "down" : "") : "";
+const src = t => `<p class="src">${t}</p>`;
+
+/* ---------- 頂部總經列 ---------- */
+function spark(vals) {
+  const v = (vals || []).filter(isNum); if (v.length < 2) return "";
+  const lo = Math.min(...v), hi = Math.max(...v), W = 120, H = 22;
+  const pts = v.map((x, i) => `${(i / (v.length - 1) * W).toFixed(1)},${(H - (x - lo) / ((hi - lo) || 1) * H).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:120px;height:22px" aria-label="近 30 天走勢"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>`;
+}
+function lightCell(l) {
+  if (!l) return "<b>—</b>";
+  if (typeof l === "string") return `<b>${esc(l)}</b>`;
+  const sc = l.score, col = !isNum(sc) ? "var(--mute)" : sc <= 16 ? "#2f6fd1" : sc <= 22 ? "#7aa7d9" : sc <= 31 ? "#1b9a4b" : sc <= 37 ? "#e0a800" : "#c62828";
+  const dots = (l.hist || []).map(([d, v]) => { const c = v <= 16 ? "#2f6fd1" : v <= 22 ? "#7aa7d9" : v <= 31 ? "#1b9a4b" : v <= 37 ? "#e0a800" : "#c62828";
+    return `<span title="${esc(d)}：${v} 分" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c};margin-right:3px"></span>`; }).join("");
+  return `<b><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${col};margin-right:5px"></span>${esc(l.value)}</b><br>${dots}`;
+}
+function renderMacro() {
+  const m = D.macro || {};
+  const q = (o, d = 2) => o ? `<b class="${cl(o.chg)}">${f(o.value, d)}</b> <span class="${cl(o.chg)}">${sg(o.chg, d)}</span>` : "<b>—</b>";
+  const cells = [
+    ["加權指數", q(m.twii), `${esc(m.twii?.date ?? "")} 收盤`, "台股大盤，用來比較個別標的是強於還是弱於大盤。"],
+    ["費城半導體", q(m.sox), "每天 06:45（前一美股日）", "美國半導體股指數，台股電子權值股和它連動度高。"],
+    ["聯準會利率", `<b>${esc(m.fed?.value ?? "—")}</b>`, "開會後變動", "美國政策利率區間，影響全球資金流向。"],
+    ["美國 CPI 年增率", `<b>${esc(m.cpi?.value ?? "—")}</b>`, `每月｜${esc(m.cpi?.date ?? "")}`, "美國通膨，影響聯準會下一步。"],
+    ["美債 10 年殖利率", m.us10y ? `<b>${f(m.us10y.value)}%</b> <span class="${cl(m.us10y.chg)}">${sg(m.us10y.chg)}</span>` : "<b>—</b>", "每天 06:45（前一美股日）", "全球資金成本參考，上升時股票相對吸引力通常下降。"],
+    ["台灣景氣燈號", lightCell(m.light), `每月｜${esc(m.light?.date ?? "")}${m.light?.stale ? "（沿用上次）" : ""}`, "國發會每月約 27 日公布上個月燈號。9–16 分藍燈、17–22 黃藍燈、23–31 綠燈、32–37 黃紅燈、38–45 紅燈。"],
+    ["VIX 恐慌指數", m.vix ? `<b>${f(m.vix.value)}</b> <span>${sg(m.vix.chg)}</span>` : "<b>—</b>", "每天 06:45（前一美股日）", "美股預期波動程度。一般 20 以下算平靜，30 以上代表市場明顯恐慌。數字變大不是漲跌訊號，只表示波動預期升高。"],
+    ["美國非農新增就業", `<b class="${cl(m.nfp?.chg_raw)}">${esc(m.nfp?.value ?? "—")}</b>`, `每月｜${esc(m.nfp?.date ?? "")}`, "美國上個月新增多少就業人口，每月第一個週五公布。數字強代表景氣熱，可能讓聯準會較晚降息；之後常會被修正。"],
+    ["USD/TWD", m.fx ? `<b>${f(m.fx.value, 3)}</b> <span>${sg(m.fx.chg, 3)}</span>${spark(m.fx.series)}` : "<b>—</b>", "近 30 天走勢｜每天 15:00", "數字變大代表台幣貶值。"],
+    ["資料產生時間", `<b>${esc(D.generated)}</b>`, "排程 06:45（07:35 備用）、15:15、18:15、21:45", "這份頁面最後一次執行程式的時間。"],
+  ];
+  document.getElementById("macro").innerHTML = cells.map(c => `<div class="c" title="${esc(c[3])}"><small>${c[0]}</small>${c[1]}<i>${c[2]}</i></div>`).join("");
+  const b = [];
+  if (D.demo) b.push("目前是示範資料（--demo），數字都是隨機產生，不是真實行情。");
+  if (D.warnings?.length) b.push(`本次有 ${D.warnings.length} 項資料沒抓到，顯示為「—」。詳細原因請看執行程式時的訊息。`);
+  document.getElementById("banner").innerHTML = b.map(t => `<div class="banner">${esc(t)}</div>`).join("");
+}
+
+/* ---------- 圖表 ---------- */
+function path(vals, X, Y) {
+  let d = "", pen = false;
+  vals.forEach((v, i) => { if (isNum(v)) { d += (pen ? "L" : "M") + X(i).toFixed(1) + "," + Y(v).toFixed(1); pen = true; } else pen = false; });
+  return d;
+}
+function frame(W, H, lo, hi, top, bot, right) {
+  const Y = v => top + (hi - v) / ((hi - lo) || 1) * (H - top - bot);
+  let g = "";
+  for (let k = 0; k <= 3; k++) {
+    const v = lo + (hi - lo) * k / 3, y = Y(v);
+    g += `<line x1="0" x2="${W - right}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="0.6"/><text x="${W - right + 4}" y="${y + 4}">${f(v, (hi - lo) >= 20 ? 0 : 2)}</text>`;
+  }
+  return {Y, g};
+}
+function dateAxis(o, X, H) {
+  const idx = [0, Math.floor(o.length / 2), o.length - 1];
+  return idx.map((i, k) => `<text x="${X(i)}" y="${H - 4}" text-anchor="${["start","middle","end"][k]}">${o[i][0].slice(5)}</text>`).join("");
+}
+function mainChart(t) {
+  const o = t.ohlc, n = o.length; if (!n) return `<p class="empty">沒有價格資料</p>`;
+  const W = 860, H = 300, R = 50;
+  let lo = Infinity, hi = -Infinity;
+  o.forEach((r, i) => { lo = Math.min(lo, r[3], t.bbl[i] ?? Infinity); hi = Math.max(hi, r[2], t.bbu[i] ?? -Infinity); });
+  const cw = (W - R) / n, X = i => i * cw + cw / 2, {Y, g} = frame(W, H, lo, hi, 8, 20, R);
+  let s = g;
+  s += `<path d="${path(t.bbu, X, Y)}" fill="none" stroke="var(--bb)" stroke-dasharray="3 3"/><path d="${path(t.bbl, X, Y)}" fill="none" stroke="var(--bb)" stroke-dasharray="3 3"/>`;
+  o.forEach((r, i) => {
+    const c = r[4] >= r[1] ? "var(--up)" : "var(--down)", x = X(i);
+    s += `<line x1="${x}" x2="${x}" y1="${Y(r[2])}" y2="${Y(r[3])}" stroke="${c}"/>`;
+    s += `<rect x="${x - cw * 0.35}" width="${cw * 0.7}" y="${Y(Math.max(r[1], r[4]))}" height="${Math.max(1, Math.abs(Y(r[1]) - Y(r[4])))}" fill="${c}"/>`;
+  });
+  [["ma5","--ma5"],["ma20","--ma20"],["ma60","--ma60"]].forEach(([k, c]) => s += `<path d="${path(t[k], X, Y)}" fill="none" stroke="var(${c})" stroke-width="1.4"/>`);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="日K、均線與布林通道">${s}${dateAxis(o, X, H)}</svg>`;
+}
+function volChart(t) {
+  const o = t.ohlc, n = o.length; if (!n) return "";
+  const W = 860, H = 90, R = 50, hi = Math.max(...o.map(r => r[5] || 0));
+  const cw = (W - R) / n, X = i => i * cw + cw / 2, {Y, g} = frame(W, H, 0, hi, 6, 4, R);
+  let s = g;
+  o.forEach((r, i) => s += `<rect x="${X(i) - cw * 0.35}" width="${cw * 0.7}" y="${Y(r[5])}" height="${Y(0) - Y(r[5])}" fill="${r[4] >= r[1] ? "var(--up)" : "var(--down)"}" opacity="0.7"/>`);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="成交量">${s}</svg>`;
+}
+function oscChart(t, lines, lo, hi, guides) {
+  const o = t.ohlc, n = o.length; if (!n) return "";
+  const W = 420, H = 130, R = 34, cw = (W - R) / n, X = i => i * cw + cw / 2;
+  const {Y, g} = frame(W, H, lo, hi, 6, 18, R);
+  let s = g + guides.map(v => `<line x1="0" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--mute)" stroke-dasharray="4 3" stroke-width="0.8"/>`).join("");
+  lines.forEach(([k, c]) => s += `<path d="${path(t[k], X, Y)}" fill="none" stroke="var(${c})" stroke-width="1.4"/>`);
+  return `<svg viewBox="0 0 ${W} ${H}">${s}${dateAxis(o, X, H)}</svg>`;
+}
+function macdChart(t) {
+  const o = t.ohlc, n = o.length; if (!n) return "";
+  const vals = [...t.dif, ...t.macd, ...t.osc].filter(isNum), m = Math.max(...vals.map(Math.abs)) || 1;
+  const W = 860, H = 130, R = 50, cw = (W - R) / n, X = i => i * cw + cw / 2, {Y, g} = frame(W, H, -m, m, 6, 18, R);
+  let s = g + `<line x1="0" x2="${W - R}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--mute)" stroke-width="0.8"/>`;
+  t.osc.forEach((v, i) => { if (isNum(v)) s += `<rect x="${X(i) - cw * 0.35}" width="${cw * 0.7}" y="${Math.min(Y(v), Y(0))}" height="${Math.abs(Y(v) - Y(0))}" fill="${v >= 0 ? "var(--up)" : "var(--down)"}" opacity="0.6"/>`; });
+  s += `<path d="${path(t.dif, X, Y)}" fill="none" stroke="var(--ma5)" stroke-width="1.4"/><path d="${path(t.macd, X, Y)}" fill="none" stroke="var(--ma20)" stroke-width="1.4"/>`;
+  return `<svg viewBox="0 0 ${W} ${H}">${s}${dateAxis(o, X, H)}</svg>`;
+}
+function barMini(pairs) {
+  if (!pairs?.length) return "";
+  const W = 420, H = 110, m = Math.max(...pairs.map(p => Math.abs(p[1] || 0))) || 1, bw = W / pairs.length;
+  const Y = v => H / 2 - (v / m) * (H / 2 - 14);
+  let s = `<line x1="0" x2="${W}" y1="${H / 2}" y2="${H / 2}" stroke="var(--mute)" stroke-width="0.8"/>`;
+  pairs.forEach(([d, v], i) => {
+    s += `<rect x="${i * bw + bw * 0.2}" width="${bw * 0.6}" y="${Math.min(Y(v), H / 2)}" height="${Math.abs(Y(v) - H / 2)}" fill="${v >= 0 ? "var(--up)" : "var(--down)"}"/>`;
+    s += `<text x="${i * bw + bw / 2}" y="${H - 1}" text-anchor="middle">${d.slice(5)}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" style="max-width:560px" aria-label="近 10 日外資買賣超">${s}</svg>`;
+}
+
+/* ---------- 四個分頁 ---------- */
+const last = a => { for (let i = (a || []).length - 1; i >= 0; i--) if (isNum(a[i])) return a[i]; return null; };
+
+function divBlock(dv) {
+  if (!dv) return "";
+  let h = "";
+  if (dv.upcoming?.length) h += `<p class="tip"><b>即將除息：</b>${dv.upcoming.map(u => `${esc(u.ex)} 配 ${f(u.cash, 3)} 元${u.pay ? `（${esc(u.pay)} 發放）` : ""}`).join("；")}</p>`;
+  h += dv.history?.length ? `<div class="tbl"><table><thead><tr><th>除息日</th><th>配息（元）</th><th>除息前收盤</th><th>單次殖利率</th></tr></thead><tbody>${
+    dv.history.map(r => `<tr><td>${esc(r.date)}</td><td>${f(r.amt, 3)}</td><td>${f(r.before)}</td><td>${isNum(r.pct) ? f(r.pct) + "%" : "—"}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">近兩年沒有除息紀錄</p>`;
+  return h;
+}
+
+function pFund(s) {
+  const fu = s.fund || {}, p = fu.per || {}, dv = fu.div || {};
+  const yieldV = s.kind === "ETF" ? dv.ttm_yield : p.yield;
+  let h = `<section><h2>基本面</h2><div class="kv">
+    <div><small>收盤價</small><b>${f(s.quote?.close)}</b></div>
+    ${s.kind === "個股" ? `<div><small>本益比</small><b>${f(p.per)}</b></div><div><small>股價淨值比</small><b>${f(p.pbr)}</b></div>` : ""}
+    <div><small>${s.kind === "ETF" ? "近 12 個月殖利率" : "殖利率"}</small><b>${isNum(yieldV) ? f(yieldV) + "%" : "—"}</b></div>
+    <div><small>近 12 個月配息合計</small><b>${isNum(dv.ttm) ? f(dv.ttm, 3) + " 元" : "—"}</b></div></div>`;
+  if (s.kind === "個股") {
+    h += `<h3>月營收（億元）</h3><p class="tip">年增率看和去年同月比，月增率看和上個月比；月營收在次月 10 日前公布。</p>`;
+    h += fu.revenue?.length ? `<div class="tbl"><table><thead><tr><th>月份</th><th>營收</th><th>年增率</th><th>月增率</th></tr></thead><tbody>${
+      fu.revenue.map(r => `<tr><td>${r.ym}</td><td>${f(r.rev)}</td><td class="${cl(r.yoy)}">${isNum(r.yoy) ? sg(r.yoy, 1) + "%" : "—"}</td><td class="${cl(r.mom)}">${isNum(r.mom) ? sg(r.mom, 1) + "%" : "—"}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">沒有月營收資料</p>`;
+    h += `<h3>近四季</h3><p class="tip">EPS 是每股賺多少錢；毛利率越高，代表產品越有定價能力。</p>`;
+    h += fu.quarters?.length ? `<div class="tbl"><table><thead><tr><th>季度</th><th>EPS</th><th>毛利率</th></tr></thead><tbody>${
+      fu.quarters.map(q => `<tr><td>${q.date}</td><td>${f(q.eps)}</td><td>${isNum(q.gm) ? f(q.gm, 1) + "%" : "—"}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">沒有財報資料</p>`;
+    h += `<h3>股利紀錄</h3>${divBlock(dv)}`;
+    h += src(`來源：FinMind（證交所、公開資訊觀測站）｜本益比資料日 ${esc(p.date ?? "—")}｜月營收、財報、股利在公布後更新`);
+  } else {
+    const ho = fu.holdings, rows = ho?.rows || [];
+    const top5 = rows.slice(0, 5).reduce((a, r) => a + r.w, 0);
+    h += `<h3>前十大持股</h3><p class="tip">前五大合計 <b>${rows.length ? f(top5, 1) + "%" : "—"}</b>。比例越集中，漲跌越受少數股票影響。</p>`;
+    h += rows.length ? `<div class="tbl"><table><thead><tr><th>股票</th><th>代號</th><th>比例</th></tr></thead><tbody>${
+      rows.slice(0, 10).map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.code)}</td><td>${f(r.w)}%</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">持股資料沒抓到</p>`;
+    if (fu.overlap?.length) h += `<h3>和其他 ETF 的持股重疊度</h3><p class="tip">把兩檔共同持有的股票，取較小的權重加總。數字越高，代表兩檔越像在買同一批股票。</p>
+      <div class="kv">${fu.overlap.map(o => `<div><small>和 ${esc(o.code)}</small><b>${f(o.pct, 1)}%</b></div>`).join("")}</div>`;
+    h += `<h3>配息紀錄</h3><p class="tip">單次殖利率＝配息 ÷ 除息前收盤價。近 12 個月殖利率＝近一年配息合計 ÷ 最新收盤價。</p>${divBlock(dv)}`;
+    if (s.code === "00406A") h += `<p class="tip">00406A 是主動式 ETF，持股由經理人調整，前十大持股的變化比被動式 ETF 更值得留意；掩護性買權比例請以中信投信公告為準。</p>`;
+    h += `<p class="tip">費用率、折溢價：目前沒有穩定的免費來源，請到投信官網查看。</p>`;
+    h += src(`來源：持股 MoneyDJ（資料日 ${esc(ho?.date ?? "—")}，通常每月或每週更新）｜配息 FinMind（證交所）`);
+  }
+  return h + `</section>`;
+}
+
+function pTech(s) {
+  const t = s.tech; if (!t) return `<section><h2>技術面</h2><p class="empty">沒有價格資料</p></section>`;
+  const c = s.quote?.close, m20 = last(t.ma20);
+  const kv = [["MA5", last(t.ma5)], ["MA20", m20], ["MA60", last(t.ma60)], ["K / D", null, `${f(last(t.k), 1)} / ${f(last(t.d), 1)}`],
+    ["RSI(14)", last(t.rsi), null, 1], ["DIF / MACD", null, `${f(last(t.dif))} / ${f(last(t.macd))}`], ["布林上軌", last(t.bbu)], ["布林下軌", last(t.bbl)]];
+  return `<section><h2>技術面</h2>
+  <div class="kv">${kv.map(r => `<div><small>${r[0]}</small><b>${r[2] ?? f(r[1], r[3] ?? 2)}</b></div>`).join("")}</div>
+  <p class="tip">收盤 ${f(c)} 目前在 20 日均線${isNum(c) && isNum(m20) ? (c >= m20 ? "之上" : "之下") : "—"}。以下指標都是用過去價格算的，只描述現況，不能預測明天。</p>
+  <h3>日K、均線、布林通道（近 120 日）</h3>
+  <p class="tip">紅K收高於開、綠K收低於開；股價在均線之上通常偏多；虛線是布林通道，通道收窄代表波動變小。</p>
+  <div class="legend"><span style="--c:var(--ma5)">MA5</span><span style="--c:var(--ma20)">MA20</span><span style="--c:var(--ma60)">MA60</span><span style="--c:var(--bb)">布林通道</span></div>
+  ${mainChart(t)}
+  <h3>成交量（張）</h3><p class="tip">上漲時量放大較可信；上漲但量縮，力道可能不足。</p>${volChart(t)}
+  <div class="grid2">
+    <div><h3>KD</h3><p class="tip">高於 80 偏熱、低於 20 偏冷；K 由下往上穿過 D 叫黃金交叉。強勢時會鈍化。</p>
+      <div class="legend"><span style="--c:var(--ma5)">K</span><span style="--c:var(--ma20)">D</span></div>${oscChart(t, [["k","--ma5"],["d","--ma20"]], 0, 100, [20, 80])}</div>
+    <div><h3>RSI(14)</h3><p class="tip">高於 70 偏熱、低於 30 偏冷，50 是多空分界。過熱不等於馬上會跌。</p>${oscChart(t, [["rsi","--ma60"]], 0, 100, [30, 70])}</div>
+  </div>
+  <h3>MACD(12, 26, 9)</h3><p class="tip">DIF 穿過 MACD 線往上偏多；柱狀體在 0 軸上方且變長，代表多方動能增強。它是落後指標，盤整時容易出現假訊號。</p>
+  <div class="legend"><span style="--c:var(--ma5)">DIF</span><span style="--c:var(--ma20)">MACD</span></div>${macdChart(t)}
+  ${src(`來源：FinMind 日成交資料（未還原除權息）｜資料日 ${esc(s.quote?.date ?? "—")}｜每天 15:15 更新`)}</section>`;
+}
+
+const newsList = arr => arr?.length ? `<ul class="news">${arr.map(n => {
+  const srcs = n.sources?.length ? n.sources : [n.source];
+  const badge = (n.n || 1) >= 2 ? `<span class="badge" title="${esc(srcs.join("、"))}">${n.n} 家報導</span>` : "";
+  return `<li>${n.link ? `<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a>` : esc(n.title)}${badge}<small>${esc(srcs.join("、"))}｜${esc(n.date)}</small></li>`;
+}).join("")}</ul>` : `<p class="empty">近 3 天沒有符合條件的新聞</p>`;
+let usTab = 0;
+function usNews() {
+  const T = D.us_news?.topics || [];
+  if (!T.length) return `<p class="empty">這次沒有抓到美國相關新聞</p>`;
+  return `<div class="subtabs">${T.map((t, i) => `<button data-us="${i}" aria-selected="${i === usTab}">${esc(t.name)}</button>`).join("")}</div>${newsList(T[Math.min(usTab, T.length - 1)].items)}`;
+}
+
+function nextDiv(s) {
+  const dv = s.fund?.div || {}, c = s.quote?.close, up = dv.upcoming?.[0], h0 = dv.history?.[0];
+  const ago = new Date(D.generated.slice(0, 10)); ago.setFullYear(ago.getFullYear() - 1);
+  const n12 = (dv.history || []).filter(r => r.date >= isoD(ago)).length;
+  let h = up ? `<div class="kv"><div><small>下一次除息日</small><b>${esc(up.ex)}</b></div>
+    <div><small>每單位配息</small><b>${f(up.cash, 3)} 元</b></div>
+    <div><small>預估單次殖利率</small><b>${isNum(c) && c ? f(up.cash / c * 100) + "%" : "—"}</b></div>
+    <div><small>發放日</small><b>${esc(up.pay || "—")}</b></div>
+    <div><small>公告日</small><b>${esc(up.ann || "—")}</b></div></div>
+    <p class="tip">預估單次殖利率＝這次配息 ÷ 最新收盤價，只是參考。</p>`
+    : `<p class="tip">目前沒有查到已公告、尚未除息的配息（資料來源是 FinMind，公告可能延遲）。</p>`;
+  h += `<p class="tip">${h0 ? `最近一次除息：${esc(h0.date)}，配 ${f(h0.amt, 3)} 元${isNum(h0.pct) ? `（單次殖利率 ${f(h0.pct)}%）` : ""}；` : ""}近 12 個月除息 ${n12} 次，合計 ${isNum(dv.ttm) ? f(dv.ttm, 3) + " 元" : "—"}${isNum(dv.ttm_yield) ? `（近 12 個月殖利率 ${f(dv.ttm_yield)}%）` : ""}。</p>`;
+  return h;
+}
+
+function pNews(s) {
+  return `<section><h2>相關新聞</h2><p class="tip">只列標題、時間與來源，不加利多／利空判斷。點標題看原文；滑鼠移到「N 家報導」可看是哪幾家。</p>${newsList(s.news)}
+  ${src("來源：FinMind、鉅亨網、Google 新聞、台灣財經媒體 RSS｜驗證：標題須提到代號或名稱、只收可信媒體、近 3 天｜「N 家報導」代表多家媒體都有報導，可信度較高")}</section>
+  ${s.kind === "個股" ? `<section><h2>公司重大訊息與配息</h2><h3>下一次配息</h3>${nextDiv(s)}<h3>重大訊息</h3><p class="tip">證交所公布的重大訊息主旨，只包含最近一個交易日。</p>${
+    s.announce?.length ? `<ul class="news">${s.announce.map(a => `<li><details><summary>${esc(a.title)}<small>${esc(a.date)}${a.rule ? "｜" + esc(a.rule) : ""}</small></summary><p class="tip">${esc(a.desc)}</p></details></li>`).join("")}</ul>` : `<p class="empty">最近一個交易日沒有重大訊息</p>`}
+    ${src("來源：證交所 OpenAPI（上市公司每日重大訊息）、配息 FinMind｜完整歷史請到公開資訊觀測站")}</section>` :
+  `<section><h2>ETF 專屬：配息</h2>${nextDiv(s)}
+    <p class="tip">持股變化請看「基本面」的前十大持股（含資料日期）；規模變化、成分股調整公告請到投信官網查看${s.code === "00406A" ? "，00406A 另外留意經理人持股異動" : ""}。</p></section>`}
+  <section><h2>美國相關新聞（台灣媒體，所有標的相同）</h2><p class="tip">台灣媒體報導的美國 AI、川普、經濟與熱門時事，只列標題。</p>
+  ${usNews()}${src("來源：Google 新聞中文搜尋＋台灣財經媒體 RSS｜只收可信媒體、近 2 天｜「N 家報導」代表多家媒體都有報導")}</section>`;
+}
+
+function pChips(s) {
+  const c = s.chips || {}, m = c.margin, b = c.sbl, fr = c.foreign_ratio, ins = c.inst;
+  return `<section><h2>籌碼面</h2><p class="tip">籌碼只描述誰在買賣，不能預測明天漲跌。單位：張。</p>
+  <div class="grid2">
+    <div><h3>融資融券</h3><p class="tip">融資是借錢買股、融券是借股賣出；券資比越高，相對空方越多。要搭配股價位置一起看。</p>
+      <div class="kv"><div><small>融資餘額</small><b>${f(m?.mb, 0)}</b> <span class="${cl(m?.mb_chg)}">${sg(m?.mb_chg, 0)}</span></div>
+      <div><small>融券餘額</small><b>${f(m?.ss, 0)}</b> <span class="${cl(m?.ss_chg)}">${sg(m?.ss_chg, 0)}</span></div>
+      <div><small>券資比</small><b>${isNum(m?.ratio) ? f(m.ratio) + "%" : "—"}</b></div></div></div>
+    <div><h3>借券賣出</h3><p class="tip">通常是法人借股票後賣出，餘額增加代表看空部位增加。</p>
+      <div class="kv"><div><small>借券賣出餘額</small><b>${f(b?.bal, 0)}</b> <span class="${cl(b?.chg)}">${sg(b?.chg, 0)}</span></div></div></div>
+  </div>
+  <h3>外資持股比例</h3><p class="tip">大戶持股（集保股權分散表）在免費方案拿不到，先用外資持股比例代替，觀察外資是否持續增減。</p>
+  <div class="kv"><div><small>外資持股</small><b>${isNum(fr?.val) ? f(fr.val) + "%" : "—"}</b> <span class="${cl(fr?.chg)}">${isNum(fr?.chg) ? sg(fr.chg) + "%" : ""}</span></div></div>
+  <h3>三大法人買賣超</h3>
+  ${ins ? `<div class="tbl"><table><thead><tr><th>法人</th><th>買進</th><th>賣出</th><th>買賣超</th></tr></thead><tbody>${
+    ins.rows.map(r => `<tr><td>${r.name}</td><td>${f(r.buy, 0)}</td><td>${f(r.sell, 0)}</td><td class="${cl(r.net)}">${sg(r.net, 0)}</td></tr>`).join("")}</tbody></table></div>
+    <h3>近 10 日外資買賣超</h3>${barMini(ins.foreign10)}` : `<p class="empty">沒有法人資料</p>`}
+  ${src(`來源：FinMind（證交所）｜法人 ${esc(ins?.date ?? "—")}、融資融券 ${esc(m?.date ?? "—")}、借券 ${esc(b?.date ?? "—")}｜FinMind 約 20:00 更新法人、21:00 更新融資融券，所以完整資料在 21:45 那次執行才會齊，若當晚還沒更新，隔天早上那次會補上`)}</section>`;
+}
+
+/* ---------- 我的策略 ---------- */
+const SKEY = "dash-strategy-v2";
+const CLOUD = !!(D.firebase && D.firebase.apiKey);
+const LOCALLOGIN = !CLOUD && !!(D.local_login && D.local_login.hashes && D.local_login.hashes.length);
+const LOCAL = {user: null};
+try { const s = JSON.parse(localStorage.getItem("dash-login") || "null"); if (LOCALLOGIN && s && D.local_login.hashes.includes(s.h)) LOCAL.user = s.u; } catch (e) {}
+const skey = () => LOCALLOGIN && LOCAL.user ? SKEY + ":" + LOCAL.user : SKEY;
+async function sha256hex(t) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+}
+const AUTH = {ready: !CLOUD, user: null, profile: null, data: null, users: null, err: ""};
+function sNorm(o) {
+  o = o || {};
+  if (!Array.isArray(o.strategies)) o = {strategies: [], active: null};   // 一開始沒有策略，要自己新增
+  return o;
+}
+const sName = x => (x && x.name && x.name.trim()) || (x ? `${x.target}策略` : "");   // 沒取名就叫「0050策略」
+function sLoad() {
+  if (CLOUD) return sNorm(JSON.parse(JSON.stringify(AUTH.data || {})));
+  try { return sNorm(JSON.parse(localStorage.getItem(skey()) || "null")); } catch (e) { return sNorm(null); }
+}
+function curStrat(o) { o = o || sLoad(); return o.strategies.find(x => x.id === o.active) || o.strategies[0] || null; }
+function nextFifth(day) {
+  const t = new Date(), d = new Date(t.getFullYear(), t.getMonth() + (t.getDate() >= day ? 1 : 0), day);
+  return isoD(d);
+}
+function sSave(o) {
+  if (CLOUD) {
+    AUTH.data = o;
+    window.FB.saveStrategy(o).catch(e => alert("儲存失敗：" + e.message));
+    return;
+  }
+  try { localStorage.setItem(skey(), JSON.stringify(o)); } catch (e) {}
+}
+window.addEventListener("fb-auth", () => { if (cur === -1) render(); });
+
+function pLogin() {
+  return `<div class="head"><h1>我的策略</h1><span class="m">請先登入</span></div>
+  <section style="max-width:420px"><h2>登入</h2>
+    ${!AUTH.ready ? `<p class="empty">連線中……</p>` : `
+    <div class="grid4" style="grid-template-columns:1fr">
+      <label class="fld"><small>帳號</small><input id="l_u" autocomplete="username"></label>
+      <label class="fld"><small>密碼</small><input id="l_p" type="password" autocomplete="current-password"></label>
+      <button id="l_go" class="pri">登入</button>
+    </div><p class="tip" id="l_msg" style="color:var(--down)">${esc(AUTH.err)}</p>
+    <p class="tip">${CLOUD ? "帳號由管理員建立。每個人的策略資料各自獨立，換裝置登入也看得到。" : "每個帳號的策略資料各自獨立，存在這台裝置的瀏覽器裡。"}</p>`}
+  </section>`;
+}
+
+function pAccountBar() {
+  const p = AUTH.profile || {};
+  return `<div class="acct"><span>已登入：<b>${esc(p.username || "")}</b>${p.role === "admin" ? "（管理員）" : ""}</span>
+    <button class="ghost" id="a_pw">改密碼</button><button class="ghost" id="a_out">登出</button></div>
+    <div id="pwbox" class="grid4" style="display:none;margin-bottom:12px">
+      <label class="fld"><small>目前密碼</small><input id="pw_old" type="password" autocomplete="current-password"></label>
+      <label class="fld"><small>新密碼（至少 6 個字）</small><input id="pw_new" type="password" autocomplete="new-password"></label>
+      <div class="fld"><small>&nbsp;</small><button id="pw_go" class="pri">更新密碼</button></div>
+      <p class="tip" id="pw_msg"></p></div>`;
+}
+
+function pAdmin() {
+  const A = D.auth, list = (AUTH.users || []).filter(u => u.role !== "admin");
+  const active = list.filter(u => u.active).length;
+  return `<section><h2>管理使用者</h2><p class="tip">只有管理員看得到這一區。使用者最多 ${A.max} 位（目前啟用 ${active} 位）。</p>
+    ${AUTH.users === null ? `<p class="empty">讀取中……</p>` : `
+    <div class="tbl"><table><thead><tr><th>帳號</th><th>狀態</th><th>建立時間</th><th></th></tr></thead><tbody>${
+      list.length ? list.map(u => `<tr><td>${esc(u.username)}</td><td>${u.active ? "啟用" : "<span style='color:var(--mute)'>停用</span>"}</td><td>${esc(u.created || "—")}</td>
+      <td><button class="ghost" data-act="${esc(u.uid)}" data-on="${u.active ? 0 : 1}">${u.active ? "停用" : "啟用"}</button></td></tr>`).join("")
+      : `<tr><td colspan="4" class="empty">還沒有使用者</td></tr>`}</tbody></table></div>`}
+    <h3>新增使用者</h3><div class="grid4">
+      <label class="fld"><small>帳號（英文或數字）</small><input id="u_new" autocomplete="off"></label>
+      <label class="fld"><small>初始密碼（至少 6 個字）</small><input id="u_pw" type="text" autocomplete="off"></label>
+      <div class="fld"><small>&nbsp;</small><button id="u_add" class="pri">新增</button></div></div>
+    <p class="tip" id="u_msg"></p>
+    <p class="tip">停用後該使用者就無法讀寫自己的策略資料；要完全刪除帳號，請到 Firebase 主控台的 Authentication 刪除。使用者忘記密碼時，請在主控台刪除後重新新增。</p></section>`;
+}
+const pad = n => (n < 10 ? "0" : "") + n;
+const isoD = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const money = v => isNum(v) ? Math.round(v).toLocaleString("en-US") : "—";
+
+function stratCalc(strat) {
+  const st0 = D.strategy || {};
+  strat = strat || curStrat() || {settings: {}, buys: [], target: st0.target};
+  const set = strat.settings || {};
+  const st = {...st0, target: strat.target, deposit_start: set.start || st0.deposit_start || ""};
+  const g = (k, def) => { const v = parseFloat(set[k]); return isFinite(v) ? v : def; };
+  const cfg = {
+    base: g("base", st.base), dep: g("dep", st.monthly_deposit), pct: g("pct", st.batch_pct),
+    pb: g("pb", st.pullback_pct), fpb: g("fpb", st.final_pullback_pct)
+  };
+  const buys = (strat.buys || []).slice().sort((a, b) => a.d < b.d ? -1 : 1);
+  const tgt = D.stocks.find(x => x.code === st.target), o = tgt?.tech?.ohlc || [];
+  const dates = o.map(r => r[0]), closes = o.map(r => r[4]);
+  const hd = st.high_days || 20, win = closes.slice(-hd);
+  let H = null, Hd = null;
+  win.forEach((v, i) => { if (H === null || v > H) { H = v; Hd = dates[dates.length - win.length + i]; } });
+  const close = closes[closes.length - 1], closeDate = dates[dates.length - 1];
+
+  // 本輪：每月 reset_day 號開始
+  const today = new Date(), rd = st.reset_day || 5;
+  const ps = today.getDate() >= rd ? new Date(today.getFullYear(), today.getMonth(), rd) : new Date(today.getFullYear(), today.getMonth() - 1, rd);
+  const nextReset = new Date(ps.getFullYear(), ps.getMonth() + 1, rd);
+  const psISO = isoD(ps), round = buys.filter(b => b.d >= psISO), n = round.length;
+  const NB = st.normal_batches || 6, TOTAL = NB + 1;
+  const last = round[n - 1];
+  const gap = last ? dates.filter(d => d > last.d).length : null;     // 上一批成交日的下一個交易日起算
+  const reset = !!last && gap >= (st.gap_reset_days || 20);
+  const ref = (!last || reset) ? H : last.p;
+  const drop = n < NB ? cfg.pb : cfg.fpb;
+  const trig = isNum(ref) ? ref * (1 - drop / 100) : null;
+  const diff = isNum(trig) && isNum(close) ? (close / trig - 1) * 100 : null;
+
+  // 加碼金：起算 ＋ 每月入帳 − 全部買進
+  const spent = buys.reduce((a, b) => a + b.p * b.s, 0), spentRound = round.reduce((a, b) => a + b.p * b.s, 0);
+  let nd = 0;
+  if (st.deposit_start) { const s0 = new Date(st.deposit_start + "T00:00:00"); let d = new Date(s0); while (d <= today) { nd++; d = new Date(s0.getFullYear(), s0.getMonth() + nd, s0.getDate()); } }
+  const bal = isNum(cfg.base) ? cfg.base + (isNum(cfg.dep) ? cfg.dep : 0) * nd - spent : null;
+  const pool = isNum(bal) ? bal + spentRound : null;            // 本輪開始時的餘額
+  const per = isNum(pool) && isNum(cfg.pct) ? pool * cfg.pct / 100 : null;
+  let nextDep = null;
+  if (st.deposit_start) { const s0 = new Date(st.deposit_start + "T00:00:00"); nextDep = s0 > today ? s0 : new Date(today.getFullYear(), today.getMonth() + (today.getDate() >= s0.getDate() ? 1 : 0), s0.getDate()); }
+  return {st, strat, tgt, cfg, buys, round, n, NB, TOTAL, H, Hd, close, closeDate, gap, reset, ref, drop, trig, diff, bal, per, nextDep, nextReset, psISO, dates};
+}
+
+function pStrategy() {
+  if (LOCALLOGIN) {
+    if (!LOCAL.user) return pLogin();
+    return `<div class="acct"><span>已登入：<b>${esc(LOCAL.user)}</b></span><button class="ghost" id="a_out">登出</button></div>` + pStrategyTabs();
+  }
+  if (CLOUD) {
+    if (!AUTH.user) return pLogin();
+    if (!AUTH.profile || !AUTH.data) return `<div class="head"><h1>我的策略</h1></div><section><p class="empty">${AUTH.err ? esc(AUTH.err) : "讀取你的策略資料中……"}</p></section>`;
+    if (!AUTH.profile.active) return `<div class="head"><h1>我的策略</h1></div>${pAccountBar()}<section><p class="empty">這個帳號已被停用，請聯絡管理員。</p></section>`;
+  }
+  return (CLOUD ? pAccountBar() : "") + pStrategyTabs() + (CLOUD && AUTH.profile.role === "admin" ? pAdmin() : "");
+}
+
+function pStrategyTabs() {
+  const o = sLoad(), cs = curStrat(o), used = new Set(o.strategies.map(x => x.target));
+  const avail = D.stocks.filter(x => x.tech && !used.has(x.code));
+  const canAdd = o.strategies.length < 10 && avail.length > 0;
+  const form = `<section><h2>新增策略</h2>${canAdd ? `<p class="tip">只能選本網站有收錄、每天會更新資料的標的；每檔一個策略，最多 10 個。建立後可以改名字。</p>
+    <div class="grid4"><label class="fld"><small>選擇標的</small><select id="st_pick" class="sel">${avail.map(x => `<option value="${esc(x.code)}">${esc(x.code)}策略（${esc(x.name)}）</option>`).join("")}</select></label>
+    <div class="fld"><small>&nbsp;</small><button id="st_create" class="pri">建立策略</button></div></div>`
+    : `<p class="empty">${o.strategies.length >= 10 ? "已經有 10 個策略，達到上限。" : "所有標的都已經建立策略了。"}</p>`}</section>`;
+  if (!cs) return `<div class="head"><h1>我的策略</h1><span class="m">目前沒有任何策略，請先新增</span></div>${form}`;
+  const bar = `<section class="sbar"><div class="grid4">
+    <label class="fld"><small>選擇策略（${o.strategies.length} / 10）</small><select id="st_sel" class="sel">${
+      o.strategies.map(x => `<option value="${esc(x.id)}" ${x.id === cs.id ? "selected" : ""}>${esc(sName(x))}</option>`).join("")}</select></label>
+    <label class="fld"><small>策略名稱（可自己改）</small><input id="st_name" maxlength="20" value="${esc(cs.name || "")}" placeholder="${esc(cs.target)}策略"><i>改完按 Enter 儲存；清空就恢復「${esc(cs.target)}策略」</i></label>
+    <div class="fld"><small>&nbsp;</small><button id="st_delete" class="ghost2">刪除這個策略</button></div>
+  </div></section>`;
+  return form + bar + pStrategyBody(cs);
+}
+
+function pStrategyBody(strat) {
+  const c = stratCalc(strat), st = c.st;
+  const boughtToday = c.buys.some(b => b.d === isoD(new Date()));
+  const label = i => i === c.NB ? `第 ${i + 1} 批（最後加碼）` : `第 ${i + 1} 批`;
+  let msg, cls = "";
+  if (c.n >= c.TOTAL) { msg = `<b>本輪完成</b><br>本輪 ${c.TOTAL} 批都已加碼，不自動開下一輪。${isoD(c.nextReset)} 重置加碼次數。`; }
+  else if (boughtToday) { msg = `<b>今天已買進一批</b><br>一天最多一批，下一個交易日再評估。`; cls = "warn"; }
+  else if (isNum(c.diff) && c.diff <= 0) {
+    msg = `<b>已達${label(c.n)}條件</b><br>最新收盤 ${f(c.close)} ≤ 觸發價 ${f(c.trig)}。這批預算約 ${money(c.per)} 元${isNum(c.bal) && isNum(c.per) && c.per > c.bal ? "，但加碼金餘額不足" : ""}。隔天 13:00–13:20 確認當下仍低於觸發價再下單。`;
+    cls = isNum(c.bal) && isNum(c.per) && c.per > c.bal ? "warn" : "hit";
+  } else msg = `<b>${label(c.n)}尚未觸發</b><br>最新收盤 ${f(c.close)}，觸發價 ${f(c.trig)}，還差 ${isNum(c.diff) ? f(c.diff) + "%" : "—"}。`;
+  if (c.reset && c.n < c.TOTAL) msg += `<br>上一批成交後已滿 ${st.gap_reset_days} 個交易日未觸發，參考價改回 H。`;
+
+  // 七批階梯
+  let rows = "", prev = null;
+  for (let i = 0; i < c.TOTAL; i++) {
+    const b = c.round[i], d = i < c.NB ? c.cfg.pb : c.cfg.fpb;
+    let t, state, rc = "";
+    if (b) { t = b.t; state = "已成交"; prev = b.p; }
+    else if (i === c.n) { t = c.trig; state = "現在這批" + (isNum(c.diff) && c.diff <= 0 ? "（已達標）" : ""); rc = "now"; prev = t; }
+    else { prev = isNum(prev) ? prev * (1 - d / 100) : null; t = prev; state = "預估"; rc = "est"; }
+    rows += `<tr class="${rc}"><td>${label(i)}</td><td>${state}</td><td>-${d}%</td><td>${f(t)}</td><td>${b ? f(b.p) : "—"}</td><td>${b ? b.s : "—"}</td><td>${b ? money(b.p * b.s) : money(c.per)}</td><td>${b ? b.d : "—"}</td><td>${isNum(t) && isNum(c.H) ? f(t / c.H * 100, 0) + "%" : "—"}</td><td>${b ? `<button class="ghost" data-del="${esc(b.d)}">刪除</button>` : ""}</td></tr>`;
+  }
+  const inp = (id, lab, val, note, step) => `<label class="fld"><small>${lab}</small><input id="${id}" type="number" step="${step}" value="${isNum(val) ? val : ""}" placeholder="請填寫"><i>${note}</i></label>`;
+  const ro = (lab, val, note) => `<div class="fld"><small>${lab}</small><div class="ro">${val}</div><i>${note}</i></div>`;
+  return `<div class="head"><h1>${esc(sName(c.strat))}</h1><span>${esc(st.target)} ${esc(c.tgt?.name ?? "")}</span><span class="m">回檔加碼｜每月 ${st.reset_day} 號重置，最多 ${c.NB} 批＋最後加碼 1 批</span></div>
+  <div class="status ${cls}">${msg}</div>
+  <section><h2>目前數字</h2><p class="tip">這區由程式自動計算，不能修改。</p><div class="grid4">
+    ${ro(`前 ${st.high_days} 個交易日最高收盤（H）`, f(c.H), `最高在 ${esc(c.Hd ?? "—")}`)}
+    ${ro("最新收盤", f(c.close), `${esc(c.closeDate ?? "—")} 收盤`)}
+    ${ro("距上次買進（交易日）", c.gap === null ? "本輪尚未買進" : `${c.gap} / ${st.gap_reset_days}`, `從上一批成交日的下一個交易日起算，休市不計；滿 ${st.gap_reset_days} 天未觸發，參考價改回 H`)}
+    ${ro("參考價", f(c.ref), c.n === 0 ? "H" : c.reset ? "H（已重設）" : "前一批成交均價")}
+    ${ro(`${label(Math.min(c.n, c.TOTAL - 1))}觸發價`, c.n >= c.TOTAL ? "本輪完成" : f(c.trig), c.n >= c.TOTAL ? "" : `參考價 × (1 − ${c.drop}%)`)}
+    ${ro("最新收盤距觸發價", c.n >= c.TOTAL ? "—" : (isNum(c.diff) ? sg(c.diff) + "%" : "—"), "負數代表已低於觸發價")}
+    ${ro("本輪進度", `${c.n} / ${c.TOTAL} 批`, `本輪從 ${c.psISO} 起算，${isoD(c.nextReset)} 重置`)}
+  </div></section>
+  <section><h2>加碼金</h2>${CLOUD ? `<p class="tip">這區的數字存在你的帳號裡，換裝置登入也會一樣。</p>` : st.public ? `<p class="tip">公開網頁不放你的金額，請在這台裝置填一次，只會存在這個瀏覽器裡。</p>` : ""}<div class="grid4">
+    ${inp("s_base", "起算加碼金（元）", c.cfg.base, "", 100)}
+    ${inp("s_dep", "每月 5 號入帳（元）", c.cfg.dep, "", 500)}
+    <label class="fld"><small>入帳起始日</small><input id="s_start" type="date" value="${esc(st.deposit_start || "")}"><i>從這天起每月入帳</i></label>
+    ${inp("s_pct", "每批比例（%）", c.cfg.pct, "本輪開始時餘額 × 比例", 1)}
+    ${inp("s_pb", "第 1–6 批回檔（%）", c.cfg.pb, "", 0.5)}
+    ${inp("s_fpb", "最後加碼回檔（%）", c.cfg.fpb, "比第 6 批成交價再跌", 0.5)}
+    ${ro("目前加碼金餘額", money(c.bal), "起算 ＋ 已入帳 − 全部買進")}
+    ${ro("每批金額", money(c.per), "")}
+    ${ro("這批約可買（股）", isNum(c.per) && isNum(c.close) ? Math.floor(c.per / c.close).toLocaleString("en-US") : "—", "以最新收盤估算")}
+    ${ro("下次入帳", c.nextDep ? `${isoD(c.nextDep).slice(5).replace("-", "/")}　＋${money(c.cfg.dep)}` : "—", "")}
+  </div></section>
+  <section><h2>記錄一筆買進</h2><div class="grid4">
+    <label class="fld"><small>日期</small><input id="b_d" type="date" value="${isoD(new Date())}"></label>
+    <label class="fld"><small>成交均價</small><input id="b_p" type="number" step="0.01" placeholder="例如 98.50"></label>
+    <label class="fld"><small>股數</small><input id="b_s" type="number" step="1" min="1" placeholder="例如 60"></label>
+    <div class="fld"><small>&nbsp;</small><button id="b_add" class="pri">加入紀錄</button></div>
+  </div><p class="tip" id="b_msg">${CLOUD ? "紀錄存在你的帳號裡，只有你自己看得到。" : "紀錄只存在這台裝置的瀏覽器，換手機或電腦要另外記；清除瀏覽器資料會一起刪掉。"}</p></section>
+  <section><h2>七批階梯（本輪）</h2><div class="tbl"><table class="lad"><thead><tr><th>批次</th><th>狀態</th><th>回檔</th><th>觸發價</th><th>成交均價</th><th>股數</th><th>金額</th><th>日期</th><th>H 的幾 %</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+  <p class="tip">預估列假設每批剛好成交在觸發價；實際以你記錄的成交均價為準。一天最多買一批，建議使用限價單。股價未還原除權息，除息前後 H 會失真。</p></section>`;
+}
+
+function bindStrategy() {
+  const $ = id => document.getElementById(id);
+  if (LOCALLOGIN && $("l_go")) {
+    const go = async () => {
+      const u = $("l_u").value.trim(), p = $("l_p").value;
+      try {
+        const hv = await sha256hex(`${D.local_login.salt}|${u}|${p}`);
+        if (D.local_login.hashes.includes(hv)) {
+          LOCAL.user = u; AUTH.err = "";
+          try { localStorage.setItem("dash-login", JSON.stringify({u, h: hv})); } catch (e) {}
+          render();
+        } else { AUTH.err = "帳號或密碼錯誤"; $("l_msg").textContent = AUTH.err; }
+      } catch (e) { $("l_msg").textContent = "這個瀏覽器不支援登入驗證，請改用 Chrome、Edge 或 Safari。"; }
+    };
+    $("l_go").onclick = go; $("l_p").onkeydown = e => { if (e.key === "Enter") go(); };
+    return;
+  }
+  if (LOCALLOGIN && $("a_out")) {
+    $("a_out").onclick = () => { LOCAL.user = null; try { localStorage.removeItem("dash-login"); } catch (e) {} render(); };
+  }
+  if (CLOUD && $("l_go")) {
+    const go = () => { AUTH.err = ""; $("l_msg").textContent = "登入中……";
+      window.FB.login($("l_u").value.trim(), $("l_p").value).catch(e => { AUTH.err = "帳號或密碼錯誤"; $("l_msg").textContent = AUTH.err; }); };
+    $("l_go").onclick = go; $("l_p").onkeydown = e => { if (e.key === "Enter") go(); };
+    return;
+  }
+  if (CLOUD && $("a_out")) {
+    $("a_out").onclick = () => window.FB.logout();
+    $("a_pw").onclick = () => { const b = $("pwbox"); b.style.display = b.style.display === "none" ? "grid" : "none"; };
+    $("pw_go").onclick = () => {
+      const m = $("pw_msg"), n = $("pw_new").value;
+      if (n.length < 6) { m.textContent = "新密碼至少 6 個字。"; return; }
+      m.textContent = "更新中……";
+      window.FB.changePassword($("pw_old").value, n).then(() => { m.textContent = "密碼已更新。"; $("pw_old").value = $("pw_new").value = ""; })
+        .catch(e => { m.textContent = "更新失敗：目前密碼可能不正確。"; });
+    };
+  }
+  if (CLOUD && $("u_add")) {
+    $("u_add").onclick = () => {
+      const m = $("u_msg"), u = $("u_new").value.trim(), pw = $("u_pw").value;
+      const act = (AUTH.users || []).filter(x => x.role !== "admin" && x.active).length;
+      if (!/^[A-Za-z0-9_.-]{3,30}$/.test(u)) { m.textContent = "帳號請用 3–30 個英文、數字或 _ . -"; return; }
+      if (pw.length < 6) { m.textContent = "密碼至少 6 個字。"; return; }
+      if (act >= D.auth.max) { m.textContent = `已達上限 ${D.auth.max} 位，請先停用其他使用者。`; return; }
+      if ((AUTH.users || []).some(x => x.username.toLowerCase() === u.toLowerCase())) { m.textContent = "這個帳號已經存在。"; return; }
+      m.textContent = "建立中……";
+      window.FB.createUser(u, pw).then(() => window.FB.listUsers()).then(() => render())
+        .catch(e => { m.textContent = "建立失敗：" + (e.code === "auth/email-already-in-use" ? "帳號已存在" : e.message); });
+    };
+    document.querySelectorAll("[data-act]").forEach(b => b.onclick = () => {
+      window.FB.setActive(b.dataset.act, b.dataset.on === "1").then(() => window.FB.listUsers()).then(() => render())
+        .catch(e => alert("更新失敗：" + e.message));
+    });
+  }
+  const S = () => sLoad();
+  const withCur = fn => { const o = S(), cs = curStrat(o); if (!cs) return; fn(cs, o); sSave(o); render(); };
+  if ($("st_sel")) $("st_sel").onchange = e => { const o = S(); o.active = e.target.value; sSave(o); render(); };
+  if ($("st_name")) {
+    const el = $("st_name");
+    el.onkeydown = e => { if (e.key === "Enter") el.blur(); };
+    el.onchange = () => withCur(cs => { cs.name = el.value.trim().slice(0, 20); });
+  }
+  if ($("st_create")) $("st_create").onclick = () => {
+    const o = S(), code = $("st_pick").value;
+    if (!code || o.strategies.length >= 10 || o.strategies.some(x => x.target === code)) return;
+    const id = "s" + Date.now();
+    o.strategies.push({id, name: "", target: code, settings: {start: nextFifth((D.strategy || {}).reset_day || 5)}, buys: []});
+    o.active = id; sSave(o); render();
+  };
+  if ($("st_delete")) $("st_delete").onclick = () => {
+    const o = S(), cs = curStrat(o); if (!cs) return;
+    if (!confirm(`確定刪除「${sName(cs)}」？設定和買進紀錄都會一起刪除，無法復原。`)) return;
+    o.strategies = o.strategies.filter(x => x.id !== cs.id); o.active = o.strategies[0]?.id || null; sSave(o); render();
+  };
+  [["s_base", "base"], ["s_dep", "dep"], ["s_pct", "pct"], ["s_pb", "pb"], ["s_fpb", "fpb"], ["s_start", "start"]].forEach(([id, k]) => {
+    const el = document.getElementById(id); if (!el) return;
+    el.onchange = () => withCur(cs => { cs.settings = cs.settings || {}; cs.settings[k] = el.value; });
+  });
+  const add = document.getElementById("b_add");
+  if (add) add.onclick = () => {
+    const d = document.getElementById("b_d").value, p = parseFloat(document.getElementById("b_p").value), s = parseInt(document.getElementById("b_s").value, 10);
+    const msg = document.getElementById("b_msg"), c = stratCalc();
+    if (!d || !(p > 0) || !(s > 0)) { msg.textContent = "請填日期、成交均價和股數。"; return; }
+    if (c.buys.some(b => b.d === d)) { msg.textContent = "這一天已有買進紀錄，一天最多一批。"; return; }
+    if (d >= c.psISO && c.n >= c.TOTAL) { msg.textContent = "本輪已完成 7 批，要等下次重置。"; return; }
+    withCur(cs => { cs.buys = cs.buys || []; cs.buys.push({d, p, s, t: c.n < c.TOTAL ? c.trig : null}); });
+  };
+  document.querySelectorAll("[data-del]").forEach(btn => btn.onclick = () => {
+    if (!confirm("確定刪除這筆買進紀錄？")) return;
+    withCur(cs => { cs.buys = (cs.buys || []).filter(b => b.d !== btn.dataset.del); });
+  });
+}
+
+/* ---------- 版面 ---------- */
+function pAnalysis(s) {
+  const A = s.analysis || {};
+  const icon = {up: ["▲", "var(--up)", "偏強"], down: ["▼", "var(--down)", "偏弱"], mid: ["●", "var(--mute)", "中性"]};
+  const list = (k, title, note) => (A[k] && A[k].length) ? `<h3>${title}</h3>${note ? `<p class="tip">${note}</p>` : ""}<ul class="pts">${
+    A[k].map(x => `<li><span title="${icon[x.tone][2]}" style="color:${icon[x.tone][1]}">${icon[x.tone][0]}</span>${esc(x.text)}</li>`).join("")}</ul>` : "";
+  const canSee = CLOUD ? !!(AUTH.user && AUTH.data && AUTH.profile?.active) : (!LOCALLOGIN || !!LOCAL.user);
+  const mine = canSee ? sLoad().strategies.filter(x => x.target === s.code) : [];
+  A.strategy = [];
+  mine.forEach(m => {
+    const c = stratCalc(m);
+    if (c.n >= c.TOTAL) A.strategy.push({tone: "mid", text: `「${m.name}」本輪 ${c.TOTAL} 批已完成，${isoD(c.nextReset)} 重置。`});
+    else if (isNum(c.trig)) A.strategy.push({tone: "mid", text: `「${m.name}」第 ${c.n + 1} 批觸發價 ${f(c.trig)}，最新收盤距離 ${isNum(c.diff) ? sg(c.diff) + "%" : "—"}${isNum(c.diff) && c.diff <= 0 ? "，已低於觸發價" : ""}。`});
+  });
+  let h = `<section><h2>綜合分析</h2><p class="tip">把四個面向的數字整理成白話重點。▲ 偏強、▼ 偏弱、● 中性，只描述現況，不代表買賣建議，也不能預測明天。</p>
+    <p class="big2">${esc(A.summary ?? "")}</p>
+    ${list("strategy", "和你的策略")}
+    ${list("tech", "技術面")}${list("chips", "籌碼面")}${list("fund", "基本面")}${list("news", "消息面")}
+    ${list("macro", "總經背景", "每一檔都相同。")}
+    ${src("規則整理：由程式依固定規則產生，每次結果一致")}</section>`;
+  if (s.ai?.text) {
+    h += `<section><h2>AI 解讀 <small style="color:var(--mute);font-weight:500;font-size:13px">（僅參考）</small></h2><div class="ai">${esc(s.ai.text).replace(/\n+/g, "<br><br>")}</div>
+      ${src(`由 Google Gemini（${esc(s.ai.model)}）根據上方數據自動撰寫，可能有誤或遺漏，請以實際數據為準。不構成投資建議。`)}</section>`;
+  } else if (D.ai_enabled) {
+    h += `<section><h2>AI 解讀 <small style="color:var(--mute);font-weight:500;font-size:13px">（僅參考）</small></h2><p class="empty">這次 AI 解讀沒有產生成功（可能超過免費額度），請以上方規則整理為準。</p></section>`;
+  }
+  return h;
+}
+
+function render() {
+  const v = document.getElementById("view");
+  if (cur === -1) { v.innerHTML = pStrategy(); bindStrategy(); return; }
+  const s = D.stocks[cur], q = s.quote || {};
+  v.innerHTML = `<div class="head"><h1>${esc(s.code)}</h1><span>${esc(s.name)}</span><span class="m">${esc(s.kind)}</span>
+    <span class="px ${cl(q.chg)}">${f(q.close)}</span><span class="${cl(q.chg)}">${sg(q.chg)}（${isNum(q.pct) ? sg(q.pct) + "%" : "—"}）</span>
+    <span class="m">${esc(q.date ?? "")}</span></div>
+    <div class="tabs" role="tablist">${TABS.map((t, i) => `<button role="tab" aria-selected="${i === tab}" data-t="${i}">${t}</button>`).join("")}</div>
+    ${[pFund, pTech, pNews, pChips, pAnalysis][tab](s)}`;
+  v.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { tab = +b.dataset.t; render(); });
+  v.querySelectorAll("[data-us]").forEach(b => b.onclick = () => { usTab = +b.dataset.us; render(); });
+}
+let lastStock = 0;
+function renderNav() {
+  const top = document.getElementById("topnav");
+  top.innerHTML = `<b>選股分析</b><button id="go-stock" role="tab" aria-selected="${cur !== -1}">個股分析</button><button id="go-strat" role="tab" aria-selected="${cur === -1}">我的策略</button>`;
+  document.getElementById("go-stock").onclick = () => { cur = lastStock; renderNav(); render(); };
+  document.getElementById("go-strat").onclick = () => { cur = -1; renderNav(); render(); };
+
+  // 「選擇標的」只在個股分析時出現
+  const nav = document.getElementById("list");
+  if (cur === -1) { nav.style.display = "none"; nav.innerHTML = ""; return; }
+  nav.style.display = "";
+  const opt = kind => D.stocks.map((s, i) => s.kind === kind ? `<option value="${i}" ${i === lastStock ? "selected" : ""}>${esc(s.code)}　${esc(s.name)}</option>` : "").join("");
+  nav.innerHTML = `<label class="pick"><span>選擇標的</span><select id="pick"><optgroup label="ETF">${opt("ETF")}</optgroup><optgroup label="個股">${opt("個股")}</optgroup></select></label>`;
+  document.getElementById("pick").onchange = e => { cur = lastStock = +e.target.value; renderNav(); render(); };
+}
+function showErr(msg) {
+  document.getElementById("banner").insertAdjacentHTML("beforeend", `<div class="banner">頁面顯示出錯：${esc(msg)}（請把這行文字貼給 Claude）</div>`);
+}
+window.addEventListener("error", e => showErr(e.message));
+try { renderMacro(); renderNav(); render(); } catch (e) { showErr(e.message); }
+</script>
+<script type="module">
+/* 「我的策略」帳號登入：Firebase Authentication ＋ Cloud Firestore */
+async function fbInit() {
+  const V = "https://www.gstatic.com/firebasejs/13.1.0/";
+  let mods;
+  try {
+    mods = await Promise.all([import(V + "firebase-app.js"), import(V + "firebase-auth.js"), import(V + "firebase-firestore.js")]);
+  } catch (e) {
+    AUTH.ready = true; AUTH.err = "無法載入登入元件，請檢查網路後重新整理。";
+    window.dispatchEvent(new Event("fb-auth"));
+    return;
+  }
+  const [{ initializeApp }, A, F] = mods;
+  const app = initializeApp(D.firebase), auth = A.getAuth(app), db = F.getFirestore(app);
+  const email = u => `${u.toLowerCase()}@${D.auth.domain}`;
+  const fmt = ts => ts && ts.toDate ? ts.toDate().toISOString().slice(0, 10) : "";
+  const ping = () => window.dispatchEvent(new Event("fb-auth"));
+
+  window.FB = {
+    login: (u, p) => A.signInWithEmailAndPassword(auth, email(u), p),
+    logout: () => A.signOut(auth),
+    saveStrategy: o => F.setDoc(F.doc(db, "strategies", auth.currentUser.uid),
+      { strategies: o.strategies || [], active: o.active || null, updated: F.serverTimestamp() }),
+    changePassword: async (oldPw, newPw) => {
+      const cred = A.EmailAuthProvider.credential(auth.currentUser.email, oldPw);
+      await A.reauthenticateWithCredential(auth.currentUser, cred);
+      await A.updatePassword(auth.currentUser, newPw);
+    },
+    listUsers: async () => {
+      const snap = await F.getDocs(F.collection(db, "users"));
+      AUTH.users = snap.docs.map(d => ({ uid: d.id, ...d.data(), created: fmt(d.data().created) }))
+        .sort((a, b) => (a.created || "").localeCompare(b.created || ""));
+    },
+    createUser: async (u, p) => {
+      // 用第二個連線建立帳號，管理員自己不會被登出
+      const app2 = initializeApp(D.firebase, "creator-" + Date.now()), auth2 = A.getAuth(app2);
+      const cred = await A.createUserWithEmailAndPassword(auth2, email(u), p);
+      await A.signOut(auth2);
+      await F.setDoc(F.doc(db, "users", cred.user.uid), { username: u, role: "user", active: true, created: F.serverTimestamp() });
+    },
+    setActive: (uid, on) => F.updateDoc(F.doc(db, "users", uid), { active: on }),
+  };
+
+  A.onAuthStateChanged(auth, async user => {
+    AUTH.ready = true; AUTH.user = user; AUTH.profile = AUTH.data = AUTH.users = null;
+    ping();
+    if (!user) return;
+    try {
+      const uref = F.doc(db, "users", user.uid);
+      let snap = await F.getDoc(uref);
+      if (!snap.exists() && user.email === email(D.auth.admin)) {
+        await F.setDoc(uref, { username: D.auth.admin, role: "admin", active: true, created: F.serverTimestamp() });
+        snap = await F.getDoc(uref);
+      }
+      AUTH.profile = snap.exists() ? snap.data() : { username: user.email.split("@")[0], active: false };
+      if (AUTH.profile.active) {
+        const s = await F.getDoc(F.doc(db, "strategies", user.uid));
+        AUTH.data = s.exists() ? s.data() : {};
+      } else AUTH.data = {};
+      if (AUTH.profile.role === "admin") await window.FB.listUsers();
+    } catch (e) { AUTH.err = "讀取資料失敗：" + e.message; AUTH.profile = AUTH.profile || { active: false }; AUTH.data = AUTH.data || {}; }
+    ping();
+  });
+}
+if (typeof D !== "undefined" && D.firebase && D.firebase.apiKey) fbInit();
+</script>
+</body>
+</html>
