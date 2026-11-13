@@ -116,7 +116,7 @@ function renderMacro() {
   const m = D.macro || {};
   const q = (o, d = 2) => o ? `<b class="${cl(o.chg)}">${f(o.value, d)}</b> <span class="${cl(o.chg)}">${sg(o.chg, d)}</span>` : "<b>—</b>";
   const cells = [
-    ["加權指數", q(m.twii), "每天 18:00", "台股大盤，用來比較個別標的是強於還是弱於大盤。"],
+    ["加權指數", q(m.twii), `${esc(m.twii?.date ?? "")} 收盤`, "台股大盤，用來比較個別標的是強於還是弱於大盤。"],
     ["費城半導體", q(m.sox), "每天 07:00（前一美股日）", "美國半導體股指數，台股電子權值股和它連動度高。"],
     ["聯準會利率", `<b>${esc(m.fed?.value ?? "—")}</b>`, "開會後變動", "美國政策利率區間，影響全球資金流向。"],
     ["美國 CPI 年增率", `<b>${esc(m.cpi?.value ?? "—")}</b>`, `每月｜${esc(m.cpi?.date ?? "")}`, "美國通膨，影響聯準會下一步。"],

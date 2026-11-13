@@ -486,7 +486,23 @@ def parse_ndc(j):
 
 def fetch_macro():
     mc = {}
-    mc["twii"] = safe("加權指數", lambda: last_change(yf_hist("^TWII")))
+    def twii_finmind():
+        df = fm("TaiwanStockPrice", "TAIEX", start=days_ago(30))
+        if df.empty or len(df) < 2:
+            raise RuntimeError("FinMind 沒有加權指數資料")
+        df = df.sort_values("date")
+        v, p = float(df["close"].iloc[-1]), float(df["close"].iloc[-2])
+        return {"value": num(v, 2), "chg": num(v - p, 2), "pct": num((v / p - 1) * 100, 2),
+                "date": df["date"].iloc[-1], "src": "證交所（FinMind）"}
+
+    def twii_yahoo():
+        out = last_change(yf_hist("^TWII"))
+        out["src"] = "Yahoo"
+        return out
+
+    # 兩個來源都抓，用日期比較新的那一個；Yahoo 偶爾會在早上回傳前一天的舊資料
+    cands = [x for x in (safe("加權指數（FinMind）", twii_finmind), safe("加權指數（Yahoo）", twii_yahoo)) if x]
+    mc["twii"] = max(cands, key=lambda x: (x["date"], x["src"] != "Yahoo")) if cands else None
     mc["sox"] = safe("費城半導體", lambda: last_change(yf_hist("^SOX")))
 
     def fx():
