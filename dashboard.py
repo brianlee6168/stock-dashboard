@@ -628,6 +628,32 @@ def parse_ndc(j):
     raise RuntimeError("回傳資料裡找不到景氣對策信號分數")
 
 
+_PREV = None
+
+
+def prev_page_data():
+    """讀取目前已經發佈在 GitHub Pages 上的上一版頁面資料，當作抓不到時的備援。"""
+    global _PREV
+    if _PREV is not None:
+        return _PREV
+    _PREV = {}
+    url = os.environ.get("PAGES_URL", "")
+    repo = os.environ.get("GITHUB_REPOSITORY", "")          # GitHub Actions 會自動提供，例如 brianlee6168/stock-dashboard
+    if not url and "/" in repo:
+        owner, name = repo.split("/", 1)
+        url = f"https://{owner.lower()}.github.io/{name}/"
+    if not url:
+        return _PREV
+    try:
+        html = get_retry(url, tries=2).text
+        m = re.search(r"const D = (\{.*?\});\nconst TABS", html, re.S)
+        if m:
+            _PREV = json.loads(m.group(1))
+    except Exception as e:
+        log(f"  （讀取上一版頁面失敗：{str(e)[:60]}）")
+    return _PREV
+
+
 def fetch_macro():
     mc = {}
     def twii_finmind():
@@ -813,7 +839,23 @@ def fetch_macro():
         if not MANUAL.get("景氣燈號"):
             raise RuntimeError("MANUAL 裡的景氣燈號沒有填")
         return {"value": MANUAL["景氣燈號"], "date": "手動填寫"}
-    mc["light"] = first_ok("景氣燈號", light_ndc, light_browser, light_manual)
+    def light_prev():
+        old = (prev_page_data().get("macro") or {}).get("light")
+        if not isinstance(old, dict) or old.get("score") is None:
+            raise RuntimeError("上一版頁面也沒有景氣燈號")
+        return {**old, "stale": True}
+
+    mc["light"] = first_ok("景氣燈號", light_ndc, light_browser, light_prev, light_manual)
+    if (mc["light"] or {}).get("stale"):
+        log("  景氣燈號：國發會這次擋住連線，沿用上一次成功抓到的數值（燈號一個月才更新一次）")
+
+    # 每月才更新的總經數字，全部來源都失敗時沿用上一版頁面的數值
+    for k in ("fed", "cpi", "nfp"):
+        if not mc.get(k):
+            old = (prev_page_data().get("macro") or {}).get(k)
+            if old:
+                mc[k] = {**old, "stale": True}
+                log(f"  {k}：沿用上一次成功抓到的數值")
     return mc
 
 

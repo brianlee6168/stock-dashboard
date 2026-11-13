@@ -13,6 +13,10 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 "PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif}
 .up{color:var(--up)}.down{color:var(--down)}
+.topnav{display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--bg);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.topnav b{font-size:17px;margin-right:10px}
+.topnav button{font:inherit;font-size:15px;padding:7px 18px;border:1px solid var(--line);border-radius:18px;background:var(--panel);color:var(--ink);cursor:pointer}
+.topnav button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 .macro{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);display:flex;overflow-x:auto}
 .macro .c{flex:1 0 150px;padding:8px 14px;border-right:1px solid var(--line);cursor:help}
 .macro small{display:block;color:var(--mute);font-size:12px}
@@ -88,6 +92,7 @@ table.lad tr.now td{background:var(--sel);font-weight:700}table.lad tr.est td{co
 </style>
 </head>
 <body>
+<div class="topnav" id="topnav" role="tablist" aria-label="功能選單"></div>
 <header class="macro" id="macro" aria-label="總經與匯率"></header>
 <div id="banner"></div>
 <main class="wrap">
@@ -130,7 +135,7 @@ function renderMacro() {
     ["聯準會利率", `<b>${esc(m.fed?.value ?? "—")}</b>`, "開會後變動", "美國政策利率區間，影響全球資金流向。"],
     ["美國 CPI 年增率", `<b>${esc(m.cpi?.value ?? "—")}</b>`, `每月｜${esc(m.cpi?.date ?? "")}`, "美國通膨，影響聯準會下一步。"],
     ["美債 10 年殖利率", m.us10y ? `<b>${f(m.us10y.value)}%</b> <span class="${cl(m.us10y.chg)}">${sg(m.us10y.chg)}</span>` : "<b>—</b>", "每天 07:00（前一美股日）", "全球資金成本參考，上升時股票相對吸引力通常下降。"],
-    ["台灣景氣燈號", lightCell(m.light), `每月｜${esc(m.light?.date ?? "")}`, "國發會每月約 27 日公布上個月燈號。9–16 分藍燈、17–22 黃藍燈、23–31 綠燈、32–37 黃紅燈、38–45 紅燈。"],
+    ["台灣景氣燈號", lightCell(m.light), `每月｜${esc(m.light?.date ?? "")}${m.light?.stale ? "（沿用上次）" : ""}`, "國發會每月約 27 日公布上個月燈號。9–16 分藍燈、17–22 黃藍燈、23–31 綠燈、32–37 黃紅燈、38–45 紅燈。"],
     ["VIX 恐慌指數", m.vix ? `<b>${f(m.vix.value)}</b> <span>${sg(m.vix.chg)}</span>` : "<b>—</b>", "每天 07:00（前一美股日）", "美股預期波動程度。一般 20 以下算平靜，30 以上代表市場明顯恐慌。數字變大不是漲跌訊號，只表示波動預期升高。"],
     ["美國非農新增就業", `<b class="${cl(m.nfp?.chg_raw)}">${esc(m.nfp?.value ?? "—")}</b>`, `每月｜${esc(m.nfp?.date ?? "")}`, "美國上個月新增多少就業人口，每月第一個週五公布。數字強代表景氣熱，可能讓聯準會較晚降息；之後常會被修正。"],
     ["USD/TWD", m.fx ? `<b>${f(m.fx.value, 3)}</b> <span>${sg(m.fx.chg, 3)}</span>${spark(m.fx.series)}` : "<b>—</b>", "近 30 天走勢｜每天 18:00", "數字變大代表台幣貶值。"],
@@ -465,24 +470,22 @@ function pStrategy() {
   return (CLOUD ? pAccountBar() : "") + pStrategyTabs() + (CLOUD && AUTH.profile.role === "admin" ? pAdmin() : "");
 }
 
-let newStratOpen = false;
 function pStrategyTabs() {
   const o = sLoad(), cs = curStrat(o), used = new Set(o.strategies.map(x => x.target));
   const avail = D.stocks.filter(x => x.tech && !used.has(x.code));
   const canAdd = o.strategies.length < 10 && avail.length > 0;
-  const bar = `<section class="sbar"><div class="grid4">
-    ${cs ? `<label class="fld"><small>選擇策略（${o.strategies.length} / 10）</small><select id="st_sel" class="sel">${
-      o.strategies.map(x => `<option value="${esc(x.id)}" ${x.id === cs.id ? "selected" : ""}>${esc(sName(x))}</option>`).join("")}</select></label>
-    <label class="fld"><small>策略名稱（可自己改）</small><input id="st_name" maxlength="20" value="${esc(cs.name || "")}" placeholder="${esc(cs.target)}策略"><i>改完按 Enter 儲存；清空就恢復「${esc(cs.target)}策略」</i></label>` : ""}
-    <div class="fld"><small>&nbsp;</small><div style="display:flex;gap:8px;flex-wrap:wrap">
-      ${canAdd ? `<button id="st_new" class="${cs ? "ghost2" : "pri"}">＋ 新增策略</button>` : ""}
-      ${cs ? `<button id="st_delete" class="ghost2">刪除這個策略</button>` : ""}</div></div>
-  </div></section>`;
-  const form = (newStratOpen || !cs) && canAdd ? `<section><h2>新增策略</h2><p class="tip">只能選本網站有收錄、每天會更新資料的標的；每檔一個策略，最多 10 個。建立後可以改名字。</p>
+  const form = `<section><h2>新增策略</h2>${canAdd ? `<p class="tip">只能選本網站有收錄、每天會更新資料的標的；每檔一個策略，最多 10 個。建立後可以改名字。</p>
     <div class="grid4"><label class="fld"><small>選擇標的</small><select id="st_pick" class="sel">${avail.map(x => `<option value="${esc(x.code)}">${esc(x.code)}策略（${esc(x.name)}）</option>`).join("")}</select></label>
-    <div class="fld"><small>&nbsp;</small><button id="st_create" class="pri">建立策略</button></div></div></section>` : "";
-  if (!cs) return `<div class="head"><h1>我的策略</h1><span class="m">目前沒有任何策略，請先新增</span></div>${bar}${form}`;
-  return bar + form + pStrategyBody(cs);
+    <div class="fld"><small>&nbsp;</small><button id="st_create" class="pri">建立策略</button></div></div>`
+    : `<p class="empty">${o.strategies.length >= 10 ? "已經有 10 個策略，達到上限。" : "所有標的都已經建立策略了。"}</p>`}</section>`;
+  if (!cs) return `<div class="head"><h1>我的策略</h1><span class="m">目前沒有任何策略，請先新增</span></div>${form}`;
+  const bar = `<section class="sbar"><div class="grid4">
+    <label class="fld"><small>選擇策略（${o.strategies.length} / 10）</small><select id="st_sel" class="sel">${
+      o.strategies.map(x => `<option value="${esc(x.id)}" ${x.id === cs.id ? "selected" : ""}>${esc(sName(x))}</option>`).join("")}</select></label>
+    <label class="fld"><small>策略名稱（可自己改）</small><input id="st_name" maxlength="20" value="${esc(cs.name || "")}" placeholder="${esc(cs.target)}策略"><i>改完按 Enter 儲存；清空就恢復「${esc(cs.target)}策略」</i></label>
+    <div class="fld"><small>&nbsp;</small><button id="st_delete" class="ghost2">刪除這個策略</button></div>
+  </div></section>`;
+  return form + bar + pStrategyBody(cs);
 }
 
 function pStrategyBody(strat) {
@@ -599,19 +602,18 @@ function bindStrategy() {
   }
   const S = () => sLoad();
   const withCur = fn => { const o = S(), cs = curStrat(o); if (!cs) return; fn(cs, o); sSave(o); render(); };
-  if ($("st_sel")) $("st_sel").onchange = e => { const o = S(); o.active = e.target.value; newStratOpen = false; sSave(o); render(); };
+  if ($("st_sel")) $("st_sel").onchange = e => { const o = S(); o.active = e.target.value; sSave(o); render(); };
   if ($("st_name")) {
     const el = $("st_name");
     el.onkeydown = e => { if (e.key === "Enter") el.blur(); };
     el.onchange = () => withCur(cs => { cs.name = el.value.trim().slice(0, 20); });
   }
-  if ($("st_new")) $("st_new").onclick = () => { newStratOpen = !newStratOpen; render(); };
   if ($("st_create")) $("st_create").onclick = () => {
     const o = S(), code = $("st_pick").value;
     if (!code || o.strategies.length >= 10 || o.strategies.some(x => x.target === code)) return;
     const id = "s" + Date.now();
     o.strategies.push({id, name: "", target: code, settings: {start: nextFifth((D.strategy || {}).reset_day || 5)}, buys: []});
-    o.active = id; newStratOpen = false; sSave(o); render();
+    o.active = id; sSave(o); render();
   };
   if ($("st_delete")) $("st_delete").onclick = () => {
     const o = S(), cs = curStrat(o); if (!cs) return;
@@ -680,13 +682,18 @@ function render() {
 }
 let lastStock = 0;
 function renderNav() {
-  const nav = document.getElementById("list");
-  const opt = kind => D.stocks.map((s, i) => s.kind === kind ? `<option value="${i}" ${i === lastStock ? "selected" : ""}>${esc(s.code)}　${esc(s.name)}</option>` : "").join("");
-  nav.innerHTML = `<label class="pick"><span>選擇標的</span><select id="pick"><optgroup label="ETF">${opt("ETF")}</optgroup><optgroup label="個股">${opt("個股")}</optgroup></select></label>
-    <button id="go-stock" aria-pressed="${cur !== -1}">個股分析</button><button id="go-strat" aria-pressed="${cur === -1}">我的策略</button>`;
-  document.getElementById("pick").onchange = e => { cur = lastStock = +e.target.value; renderNav(); render(); };
+  const top = document.getElementById("topnav");
+  top.innerHTML = `<b>選股分析</b><button id="go-stock" role="tab" aria-selected="${cur !== -1}">個股分析</button><button id="go-strat" role="tab" aria-selected="${cur === -1}">我的策略</button>`;
   document.getElementById("go-stock").onclick = () => { cur = lastStock; renderNav(); render(); };
   document.getElementById("go-strat").onclick = () => { cur = -1; renderNav(); render(); };
+
+  // 「選擇標的」只在個股分析時出現
+  const nav = document.getElementById("list");
+  if (cur === -1) { nav.style.display = "none"; nav.innerHTML = ""; return; }
+  nav.style.display = "";
+  const opt = kind => D.stocks.map((s, i) => s.kind === kind ? `<option value="${i}" ${i === lastStock ? "selected" : ""}>${esc(s.code)}　${esc(s.name)}</option>` : "").join("");
+  nav.innerHTML = `<label class="pick"><span>選擇標的</span><select id="pick"><optgroup label="ETF">${opt("ETF")}</optgroup><optgroup label="個股">${opt("個股")}</optgroup></select></label>`;
+  document.getElementById("pick").onchange = e => { cur = lastStock = +e.target.value; renderNav(); render(); };
 }
 function showErr(msg) {
   document.getElementById("banner").insertAdjacentHTML("beforeend", `<div class="banner">頁面顯示出錯：${esc(msg)}（請把這行文字貼給 Claude）</div>`);
