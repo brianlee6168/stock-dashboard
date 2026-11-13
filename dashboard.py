@@ -75,7 +75,7 @@ ADMIN_USERNAME = "admin"            # 管理員帳號名稱
 # 還沒設定 Firebase 時的「前端測試帳號」：格式 帳號:密碼,帳號:密碼
 # 建議改放在 GitHub Secrets 的 LOCAL_USERS，就不會出現在公開的程式碼裡。
 # 注意：這只是簡單的門檻，不是真正的安全登入；資料仍存在各自的瀏覽器裡。
-LOCAL_USERS = os.environ.get("LOCAL_USERS") or "1234:1234,5678:5678"
+LOCAL_USERS = os.environ.get("LOCAL_USERS") or ""
 LOCAL_SALT = "stock-analysis-v1"
 USER_EMAIL_DOMAIN = "users.example.com"   # 帳號會在背後轉成 帳號@這個網域，使用者只需要輸入帳號
 MAX_USERS = 10                      # 管理員以外，最多幾個使用者
@@ -525,7 +525,8 @@ def fetch_dividends(code, close):
             ex = str(getattr(r, "CashExDividendTradingDate", "") or "")
             if ex and ex >= TODAY.isoformat():
                 cash = float(getattr(r, "CashEarningsDistribution", 0) or 0) + float(getattr(r, "CashStatutorySurplus", 0) or 0)
-                up.append({"ex": ex, "cash": num(cash, 3), "pay": str(getattr(r, "CashDividendPaymentDate", "") or "")})
+                up.append({"ex": ex, "cash": num(cash, 3), "pay": str(getattr(r, "CashDividendPaymentDate", "") or ""),
+                           "ann": str(getattr(r, "AnnouncementDate", "") or "")})
         if up:
             d["upcoming"] = sorted(up, key=lambda x: x["ex"])
     return d
@@ -1395,6 +1396,9 @@ def main():
     log(f"完成：{out_path}")
     if WARN:
         log(f"有 {len(WARN)} 項資料沒抓到，頁面上會顯示「—」。")
+    if not demo and ok < len(data["stocks"]) // 2:
+        log("股價抓到的標的不到一半，這次視為失敗（排程不會部署，網頁維持上一版）。")
+        sys.exit(1)
     if "--no-open" not in sys.argv:
         webbrowser.open(pathlib.Path(out_path).resolve().as_uri())
 

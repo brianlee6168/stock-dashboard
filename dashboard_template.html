@@ -300,13 +300,28 @@ function usNews() {
   return `<div class="subtabs">${T.map((t, i) => `<button data-us="${i}" aria-selected="${i === usTab}">${esc(t.name)}</button>`).join("")}</div>${newsList(T[Math.min(usTab, T.length - 1)].items)}`;
 }
 
+function nextDiv(s) {
+  const dv = s.fund?.div || {}, c = s.quote?.close, up = dv.upcoming?.[0], h0 = dv.history?.[0];
+  const ago = new Date(D.generated.slice(0, 10)); ago.setFullYear(ago.getFullYear() - 1);
+  const n12 = (dv.history || []).filter(r => r.date >= isoD(ago)).length;
+  let h = up ? `<div class="kv"><div><small>下一次除息日</small><b>${esc(up.ex)}</b></div>
+    <div><small>每單位配息</small><b>${f(up.cash, 3)} 元</b></div>
+    <div><small>預估單次殖利率</small><b>${isNum(c) && c ? f(up.cash / c * 100) + "%" : "—"}</b></div>
+    <div><small>發放日</small><b>${esc(up.pay || "—")}</b></div>
+    <div><small>公告日</small><b>${esc(up.ann || "—")}</b></div></div>
+    <p class="tip">預估單次殖利率＝這次配息 ÷ 最新收盤價，只是參考。</p>`
+    : `<p class="tip">目前沒有查到已公告、尚未除息的配息（資料來源是 FinMind，公告可能延遲）。</p>`;
+  h += `<p class="tip">${h0 ? `最近一次除息：${esc(h0.date)}，配 ${f(h0.amt, 3)} 元${isNum(h0.pct) ? `（單次殖利率 ${f(h0.pct)}%）` : ""}；` : ""}近 12 個月除息 ${n12} 次，合計 ${isNum(dv.ttm) ? f(dv.ttm, 3) + " 元" : "—"}${isNum(dv.ttm_yield) ? `（近 12 個月殖利率 ${f(dv.ttm_yield)}%）` : ""}。</p>`;
+  return h;
+}
+
 function pNews(s) {
   return `<section><h2>相關新聞</h2><p class="tip">只列標題、時間與來源，不加利多／利空判斷。點標題看原文；滑鼠移到「N 家報導」可看是哪幾家。</p>${newsList(s.news)}
   ${src("來源：FinMind、鉅亨網、Google 新聞、台灣財經媒體 RSS｜驗證：標題須提到代號或名稱、只收可信媒體、近 3 天｜「N 家報導」代表多家媒體都有報導，可信度較高")}</section>
-  ${s.kind === "個股" ? `<section><h2>公司重大訊息</h2><p class="tip">證交所公布的重大訊息主旨，只包含最近一個交易日。</p>${
+  ${s.kind === "個股" ? `<section><h2>公司重大訊息與配息</h2><h3>下一次配息</h3>${nextDiv(s)}<h3>重大訊息</h3><p class="tip">證交所公布的重大訊息主旨，只包含最近一個交易日。</p>${
     s.announce?.length ? `<ul class="news">${s.announce.map(a => `<li><details><summary>${esc(a.title)}<small>${esc(a.date)}${a.rule ? "｜" + esc(a.rule) : ""}</small></summary><p class="tip">${esc(a.desc)}</p></details></li>`).join("")}</ul>` : `<p class="empty">最近一個交易日沒有重大訊息</p>`}
-    ${src("來源：證交所 OpenAPI（上市公司每日重大訊息）｜完整歷史請到公開資訊觀測站")}</section>` :
-  `<section><h2>ETF 專屬</h2>${s.fund?.div?.upcoming?.length ? `<p class="tip"><b>配息公告：</b>${s.fund.div.upcoming.map(u => `${esc(u.ex)} 除息，每單位 ${f(u.cash, 3)} 元`).join("；")}</p>` : `<p class="tip">目前沒有查到已公告、尚未除息的配息。</p>`}
+    ${src("來源：證交所 OpenAPI（上市公司每日重大訊息）、配息 FinMind｜完整歷史請到公開資訊觀測站")}</section>` :
+  `<section><h2>ETF 專屬：配息</h2>${nextDiv(s)}
     <p class="tip">持股變化請看「基本面」的前十大持股（含資料日期）；規模變化、成分股調整公告請到投信官網查看${s.code === "00406A" ? "，00406A 另外留意經理人持股異動" : ""}。</p></section>`}
   <section><h2>美國相關新聞（台灣媒體，所有標的相同）</h2><p class="tip">台灣媒體報導的美國 AI、川普、經濟與熱門時事，只列標題。</p>
   ${usNews()}${src("來源：Google 新聞中文搜尋＋台灣財經媒體 RSS｜只收可信媒體、近 2 天｜「N 家報導」代表多家媒體都有報導")}</section>`;
