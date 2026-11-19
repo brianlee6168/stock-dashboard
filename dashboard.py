@@ -731,52 +731,47 @@ def fetch_macro():
         return last_change(s, 2)
     mc["us10y"] = first_ok("美債 10 年", us10_fred, us10_yahoo)
 
-    def tw_vix():
-        """期交所「臺指選擇權波動率指數」（台股恐慌指數）。
-        從期交所下載頁找出資料檔連結，讀最近一個交易日的收盤值；網頁格式改版時會抓不到。"""
-        from urllib.parse import urljoin
-        base = "https://www.taifex.com.tw/cht/7/"
+    def tw_vix_month(ym):
+        """期交所官方的月資料檔（英文版，純數字，好解析）：
+        https://www.taifex.com.tw/file/taifex/Dailydownload/vix/log2data_eng/YYYYMMnew.txt
+        每行 tab 分隔：日期(YYYYMMDD)、?、臺指選擇權波動率指數、收盤前1分鐘平均。"""
+        url = f"https://www.taifex.com.tw/file/taifex/Dailydownload/vix/log2data_eng/{ym}new.txt"
+        r = get_retry(url, tries=2)
+        if r.status_code == 404:
+            raise RuntimeError(f"{ym} 還沒有資料（HTTP 404）")
+        r.raise_for_status()
         pts = {}
-        errs = []
-        for page in ("vixDaily3MNew", "vixMinNew"):
-            try:
-                html = get_retry(base + page, tries=2).text
-            except Exception as e:
-                errs.append(f"{page} {str(e)[:50]}")
+        for line in r.text.splitlines():
+            if not line.strip() or "Date" in line or "---" in line:
                 continue
-            links = [l for l in re.findall(r'href=["\']([^"\']+)["\']', html, re.I)
-                     if re.search(r"vix", l, re.I) and re.search(r"\.(txt|csv)(\?|$)", l, re.I)]
-            links.sort(key=lambda l: re.sub(r"\D", "", l), reverse=True)
-            for link in links[:2]:
-                try:
-                    raw = get_retry(urljoin(base + page, link), tries=2).content
-                except Exception as e:
-                    errs.append(f"檔案 {str(e)[:40]}")
-                    continue
-                text = None
-                for enc in ("utf-8", "big5", "cp950"):
-                    try:
-                        text = raw.decode(enc)
-                        break
-                    except UnicodeDecodeError:
-                        continue
-                fdate = re.search(r"(20\d{2})(\d{2})(\d{2})", link)
-                for line in (text or "").splitlines():
-                    m = re.search(r"(20\d{2})[/-]?(\d{2})[/-]?(\d{2})", line)
-                    d = f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else (
-                        f"{fdate.group(1)}-{fdate.group(2)}-{fdate.group(3)}" if fdate else None)
-                    if not d:
-                        continue
-                    rest = line[m.end():] if m else line
-                    rest = re.sub(r"\d{1,2}:\d{2}(:\d{2})?", " ", rest)          # 去掉時間
-                    nums = [float(x) for x in re.findall(r"\d+\.\d+", rest)]
-                    nums = [x for x in nums if 3 <= x <= 200]
-                    if nums:
-                        pts[d] = nums[0]                                        # 同一天取最後一筆＝收盤
-            if len(pts) >= 2:
-                break
+            parts = [p.strip() for p in line.split("\t") if p.strip()]
+            if len(parts) < 3:
+                continue
+            try:
+                d = f"{parts[0][:4]}-{parts[0][4:6]}-{parts[0][6:8]}"
+                v = float(parts[2])
+            except ValueError:
+                continue
+            if 3 <= v <= 200:
+                pts[d] = v
         if not pts:
-            raise RuntimeError("期交所沒有抓到臺指 VIX：" + "；".join(errs[:3]))
+            raise RuntimeError(f"{ym} 的檔案沒有可用的資料列")
+        return pts
+
+    def tw_vix():
+        """抓這個月，資料不足（例如月初）再補抓上個月，取最新兩個交易日算漲跌。"""
+        first_this = TODAY.replace(day=1)
+        this_ym = first_this.strftime("%Y%m")
+        prev_ym = (first_this - dt.timedelta(days=1)).strftime("%Y%m")
+        errs = []
+        pts = {}
+        for ym in (prev_ym, this_ym):
+            try:
+                pts.update(tw_vix_month(ym))
+            except Exception as e:
+                errs.append(str(e))
+        if len(pts) < 1:
+            raise RuntimeError("期交所沒有抓到臺指 VIX：" + "；".join(errs))
         days = sorted(pts)
         v = pts[days[-1]]
         p = pts[days[-2]] if len(days) > 1 else None
@@ -790,6 +785,7 @@ def fetch_macro():
         return {**old, "stale": True}
 
     mc["vix"] = first_ok("臺指 VIX", tw_vix, tw_vix_prev)
+
     if mc["vix"]:
         mc["vix"]["src"] = "tw"
 
