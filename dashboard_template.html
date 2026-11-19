@@ -136,7 +136,7 @@ function renderMacro() {
     ["美國 CPI 年增率", `<b>${esc(m.cpi?.value ?? "—")}</b>`, `每月｜${esc(m.cpi?.date ?? "")}`, "美國通膨，影響聯準會下一步。"],
     ["美債 10 年殖利率", m.us10y ? `<b>${f(m.us10y.value)}%</b> <span class="${cl(m.us10y.chg)}">${sg(m.us10y.chg)}</span>` : "<b>—</b>", "每天 06:45（前一美股日）", "全球資金成本參考，上升時股票相對吸引力通常下降。"],
     ["台灣景氣燈號", lightCell(m.light), `每月｜${esc(m.light?.date ?? "")}${m.light?.stale ? "（沿用上次）" : ""}`, "國發會每月約 27 日公布上個月燈號。9–16 分藍燈、17–22 黃藍燈、23–31 綠燈、32–37 黃紅燈、38–45 紅燈。"],
-    ["VIX 恐慌指數", m.vix ? `<b>${f(m.vix.value)}</b> <span>${sg(m.vix.chg)}</span>` : "<b>—</b>", "每天 06:45（前一美股日）", "美股預期波動程度。一般 20 以下算平靜，30 以上代表市場明顯恐慌。數字變大不是漲跌訊號，只表示波動預期升高。"],
+    ["臺指 VIX", m.vix ? `<b>${f(m.vix.value)}</b> <span>${sg(m.vix.chg)}</span>` : "<b>—</b>", `每天 15:15｜${esc(m.vix?.date ?? "")}${m.vix?.stale ? "（沿用上次）" : ""}`, "期交所的「臺指選擇權波動率指數」，又叫台股恐慌指數，反映市場預期台股未來 30 天的波動程度。一般 20 以下算平靜，30 以上代表市場明顯恐慌。數字變大不是漲跌訊號，只表示波動預期升高。"],
     ["美國非農新增就業", `<b class="${cl(m.nfp?.chg_raw)}">${esc(m.nfp?.value ?? "—")}</b>`, `每月｜${esc(m.nfp?.date ?? "")}`, "美國上個月新增多少就業人口，每月第一個週五公布。數字強代表景氣熱，可能讓聯準會較晚降息；之後常會被修正。"],
     ["USD/TWD", m.fx ? `<b>${f(m.fx.value, 3)}</b> <span>${sg(m.fx.chg, 3)}</span>${spark(m.fx.series)}` : "<b>—</b>", "近 30 天走勢｜每天 15:00", "數字變大代表台幣貶值。"],
     ["資料產生時間", `<b>${esc(D.generated)}</b>`, "排程 06:45（07:35 備用）、15:15、18:15、21:45", "這份頁面最後一次執行程式的時間。"],
@@ -257,7 +257,6 @@ function pFund(s) {
       rows.slice(0, 10).map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.code)}</td><td>${f(r.w)}%</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">持股資料沒抓到</p>`;
     if (fu.overlap?.length) h += `<h3>和其他 ETF 的持股重疊度</h3><p class="tip">把兩檔共同持有的股票，取較小的權重加總。數字越高，代表兩檔越像在買同一批股票。</p>
       <div class="kv">${fu.overlap.map(o => `<div><small>和 ${esc(o.code)}</small><b>${f(o.pct, 1)}%</b></div>`).join("")}</div>`;
-    h += holdChanges(ho);
     h += `<h3>配息紀錄</h3><p class="tip">單次殖利率＝配息 ÷ 除息前收盤價。近 12 個月殖利率＝近一年配息合計 ÷ 最新收盤價。</p>${divBlock(dv)}`;
     if (s.code === "00406A") h += `<p class="tip">00406A 是主動式 ETF，持股由經理人調整，前十大持股的變化比被動式 ETF 更值得留意；掩護性買權比例請以中信投信公告為準。</p>`;
     h += `<p class="tip">費用率、折溢價：目前沒有穩定的免費來源，請到投信官網查看。</p>`;
@@ -301,41 +300,14 @@ function usNews() {
   return `<div class="subtabs">${T.map((t, i) => `<button data-us="${i}" aria-selected="${i === usTab}">${esc(t.name)}</button>`).join("")}</div>${newsList(T[Math.min(usTab, T.length - 1)].items)}`;
 }
 
-function holdChanges(ho) {
-  const ch = ho?.changes;
-  if (!ch) return `<h3>持股異動</h3><p class="empty">還沒有比較基準。持股資料日更新後，下一次執行就會和上一個資料日比較。</p>`;
-  const li = (arr, fn) => arr.length ? `<ul class="news">${arr.map(r => `<li>${fn(r)}</li>`).join("")}</ul>` : `<p class="empty">無</p>`;
-  const nm = r => `${esc(r.name)}（${esc(r.code)}）`;
-  return `<h3>持股異動</h3><p class="tip">比較 ${esc(ch.from)} → ${esc(ch.to)} 兩個資料日的持股表。權重變動超過 ${ch.delta ?? 0.5} 個百分點才列出；「新增」「剔除」是指在抓到的持股表中出現或消失，若表格只列前幾名，可能只是排名進出。</p>
-    <div class="grid2">
-      <div><h3>新增</h3>${li(ch.added, r => `${nm(r)} ${f(r.w)}%`)}<h3>剔除</h3>${li(ch.removed, r => `${nm(r)} 原 ${f(r.w)}%`)}</div>
-      <div><h3>權重增加</h3>${li(ch.up, r => `${nm(r)} ${f(r.from)}% → ${f(r.to)}%（${sg(r.d)}）`)}<h3>權重減少</h3>${li(ch.down, r => `${nm(r)} ${f(r.from)}% → ${f(r.to)}%（${sg(r.d)}）`)}</div>
-    </div>`;
-}
-
-function nextDiv(s) {
-  const dv = s.fund?.div || {}, c = s.quote?.close, up = dv.upcoming?.[0], h0 = dv.history?.[0];
-  const ago = new Date(D.generated.slice(0, 10)); ago.setFullYear(ago.getFullYear() - 1);
-  const n12 = (dv.history || []).filter(r => r.date >= isoD(ago)).length;
-  let h = up ? `<div class="kv"><div><small>下一次除息日</small><b>${esc(up.ex)}</b></div>
-    <div><small>每單位配息</small><b>${f(up.cash, 3)} 元</b></div>
-    <div><small>預估單次殖利率</small><b>${isNum(c) && c ? f(up.cash / c * 100) + "%" : "—"}</b></div>
-    <div><small>發放日</small><b>${esc(up.pay || "—")}</b></div>
-    <div><small>公告日</small><b>${esc(up.ann || "—")}</b></div></div>
-    <p class="tip">預估單次殖利率＝這次配息 ÷ 最新收盤價，只是參考。</p>`
-    : `<p class="tip">目前沒有查到已公告、尚未除息的配息（資料來源是 FinMind，公告可能延遲）。</p>`;
-  h += `<p class="tip">${h0 ? `最近一次除息：${esc(h0.date)}，配 ${f(h0.amt, 3)} 元${isNum(h0.pct) ? `（單次殖利率 ${f(h0.pct)}%）` : ""}；` : ""}近 12 個月除息 ${n12} 次，合計 ${isNum(dv.ttm) ? f(dv.ttm, 3) + " 元" : "—"}${isNum(dv.ttm_yield) ? `（近 12 個月殖利率 ${f(dv.ttm_yield)}%）` : ""}。</p>`;
-  return h;
-}
-
 function pNews(s) {
   return `<section><h2>相關新聞</h2><p class="tip">只列標題、時間與來源，不加利多／利空判斷。點標題看原文；滑鼠移到「N 家報導」可看是哪幾家。</p>${newsList(s.news)}
   ${src("來源：FinMind、鉅亨網、Google 新聞、台灣財經媒體 RSS｜驗證：標題須提到代號或名稱、只收可信媒體、近 3 天｜「N 家報導」代表多家媒體都有報導，可信度較高")}</section>
-  ${s.kind === "個股" ? `<section><h2>公司重大訊息與配息</h2><h3>下一次配息</h3>${nextDiv(s)}<h3>重大訊息</h3><p class="tip">證交所公布的重大訊息主旨，只包含最近一個交易日。</p>${
+  ${s.kind === "個股" ? `<section><h2>公司重大訊息</h2><p class="tip">證交所公布的重大訊息主旨，只包含最近一個交易日。</p>${
     s.announce?.length ? `<ul class="news">${s.announce.map(a => `<li><details><summary>${esc(a.title)}<small>${esc(a.date)}${a.rule ? "｜" + esc(a.rule) : ""}</small></summary><p class="tip">${esc(a.desc)}</p></details></li>`).join("")}</ul>` : `<p class="empty">最近一個交易日沒有重大訊息</p>`}
-    ${src("來源：證交所 OpenAPI（上市公司每日重大訊息）、配息 FinMind｜完整歷史請到公開資訊觀測站")}</section>` :
-  `<section><h2>ETF 專屬：配息</h2>${nextDiv(s)}
-    <p class="tip">持股異動請看「基本面」的「持股異動」；規模變化、成分股調整公告請到投信官網查看${s.code === "00406A" ? "，00406A 另外留意經理人持股異動" : ""}。</p></section>`}
+    ${src("來源：證交所 OpenAPI（上市公司每日重大訊息）｜完整歷史請到公開資訊觀測站")}</section>` :
+  `<section><h2>ETF 專屬</h2>${s.fund?.div?.upcoming?.length ? `<p class="tip"><b>配息公告：</b>${s.fund.div.upcoming.map(u => `${esc(u.ex)} 除息，每單位 ${f(u.cash, 3)} 元`).join("；")}</p>` : `<p class="tip">目前沒有查到已公告、尚未除息的配息。</p>`}
+    <p class="tip">持股變化請看「基本面」的前十大持股（含資料日期）；規模變化、成分股調整公告請到投信官網查看${s.code === "00406A" ? "，00406A 另外留意經理人持股異動" : ""}。</p></section>`}
   <section><h2>美國相關新聞（台灣媒體，所有標的相同）</h2><p class="tip">台灣媒體報導的美國 AI、川普、經濟與熱門時事，只列標題。</p>
   ${usNews()}${src("來源：Google 新聞中文搜尋＋台灣財經媒體 RSS｜只收可信媒體、近 2 天｜「N 家報導」代表多家媒體都有報導")}</section>`;
 }

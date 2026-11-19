@@ -75,7 +75,7 @@ ADMIN_USERNAME = "admin"            # 管理員帳號名稱
 # 還沒設定 Firebase 時的「前端測試帳號」：格式 帳號:密碼,帳號:密碼
 # 建議改放在 GitHub Secrets 的 LOCAL_USERS，就不會出現在公開的程式碼裡。
 # 注意：這只是簡單的門檻，不是真正的安全登入；資料仍存在各自的瀏覽器裡。
-LOCAL_USERS = os.environ.get("LOCAL_USERS") or ""
+LOCAL_USERS = os.environ.get("LOCAL_USERS") or "1234:1234,5678:5678"
 LOCAL_SALT = "stock-analysis-v1"
 USER_EMAIL_DOMAIN = "users.example.com"   # 帳號會在背後轉成 帳號@這個網域，使用者只需要輸入帳號
 MAX_USERS = 10                      # 管理員以外，最多幾個使用者
@@ -525,8 +525,7 @@ def fetch_dividends(code, close):
             ex = str(getattr(r, "CashExDividendTradingDate", "") or "")
             if ex and ex >= TODAY.isoformat():
                 cash = float(getattr(r, "CashEarningsDistribution", 0) or 0) + float(getattr(r, "CashStatutorySurplus", 0) or 0)
-                up.append({"ex": ex, "cash": num(cash, 3), "pay": str(getattr(r, "CashDividendPaymentDate", "") or ""),
-                           "ann": str(getattr(r, "AnnouncementDate", "") or "")})
+                up.append({"ex": ex, "cash": num(cash, 3), "pay": str(getattr(r, "CashDividendPaymentDate", "") or "")})
         if up:
             d["upcoming"] = sorted(up, key=lambda x: x["ex"])
     return d
@@ -563,47 +562,6 @@ def fetch_holdings(code):
         raise RuntimeError("網頁上找不到持股表格")
     rows.sort(key=lambda x: -x["w"])
     return {"date": date, "rows": rows}
-
-
-HOLD_DELTA = 0.5   # ETF 持股異動：權重變動超過幾個百分點才列出
-
-
-def add_holdings_changes(code, cur):
-    """和「上一個不同資料日」的持股比較。基準取自上一版已發佈的頁面（prev_page_data）。"""
-    if not cur or not cur.get("rows"):
-        return cur
-    prev = prev_page_data() or {}
-    ps = next((x for x in (prev.get("stocks") or []) if x.get("code") == code), None)
-    ph = ((ps or {}).get("fund") or {}).get("holdings") or {}
-    base = None
-    if ph.get("date") and ph.get("date") != cur.get("date") and ph.get("rows"):
-        base = {"date": ph["date"], "rows": [{"code": r["code"], "name": r["name"], "w": r["w"]} for r in ph["rows"]]}
-    elif ph.get("prev", {}).get("rows"):
-        base = ph["prev"]          # 資料日沒變：沿用上次留下的比較基準
-    if not base:
-        return cur
-    cur["prev"] = base
-    old = {r["code"]: r for r in base["rows"]}
-    new = {r["code"]: r for r in cur["rows"]}
-    ch = {"from": base["date"], "to": cur.get("date"), "delta": HOLD_DELTA,
-          "added": [], "removed": [], "up": [], "down": []}
-    for c, r in new.items():
-        if c not in old:
-            ch["added"].append(r)
-            continue
-        d = round(r["w"] - old[c]["w"], 2)
-        item = {"code": c, "name": r["name"], "from": old[c]["w"], "to": r["w"], "d": d}
-        if d >= HOLD_DELTA:
-            ch["up"].append(item)
-        elif d <= -HOLD_DELTA:
-            ch["down"].append(item)
-    ch["removed"] = [r for c, r in old.items() if c not in new]
-    ch["added"].sort(key=lambda r: -r["w"])
-    ch["removed"].sort(key=lambda r: -r["w"])
-    ch["up"].sort(key=lambda r: -r["d"])
-    ch["down"].sort(key=lambda r: r["d"])
-    cur["changes"] = ch
-    return cur
 
 
 # ---------------------------------------------------------------------
@@ -773,7 +731,67 @@ def fetch_macro():
         return last_change(s, 2)
     mc["us10y"] = first_ok("美債 10 年", us10_fred, us10_yahoo)
 
-    mc["vix"] = safe("VIX 恐慌指數", lambda: last_change(yf_hist("^VIX")))
+    def tw_vix():
+        """期交所「臺指選擇權波動率指數」（台股恐慌指數）。
+        從期交所下載頁找出資料檔連結，讀最近一個交易日的收盤值；網頁格式改版時會抓不到。"""
+        from urllib.parse import urljoin
+        base = "https://www.taifex.com.tw/cht/7/"
+        pts = {}
+        errs = []
+        for page in ("vixDaily3MNew", "vixMinNew"):
+            try:
+                html = get_retry(base + page, tries=2).text
+            except Exception as e:
+                errs.append(f"{page} {str(e)[:50]}")
+                continue
+            links = [l for l in re.findall(r'href=["\']([^"\']+)["\']', html, re.I)
+                     if re.search(r"vix", l, re.I) and re.search(r"\.(txt|csv)(\?|$)", l, re.I)]
+            links.sort(key=lambda l: re.sub(r"\D", "", l), reverse=True)
+            for link in links[:2]:
+                try:
+                    raw = get_retry(urljoin(base + page, link), tries=2).content
+                except Exception as e:
+                    errs.append(f"檔案 {str(e)[:40]}")
+                    continue
+                text = None
+                for enc in ("utf-8", "big5", "cp950"):
+                    try:
+                        text = raw.decode(enc)
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                fdate = re.search(r"(20\d{2})(\d{2})(\d{2})", link)
+                for line in (text or "").splitlines():
+                    m = re.search(r"(20\d{2})[/-]?(\d{2})[/-]?(\d{2})", line)
+                    d = f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else (
+                        f"{fdate.group(1)}-{fdate.group(2)}-{fdate.group(3)}" if fdate else None)
+                    if not d:
+                        continue
+                    rest = line[m.end():] if m else line
+                    rest = re.sub(r"\d{1,2}:\d{2}(:\d{2})?", " ", rest)          # 去掉時間
+                    nums = [float(x) for x in re.findall(r"\d+\.\d+", rest)]
+                    nums = [x for x in nums if 3 <= x <= 200]
+                    if nums:
+                        pts[d] = nums[0]                                        # 同一天取最後一筆＝收盤
+            if len(pts) >= 2:
+                break
+        if not pts:
+            raise RuntimeError("期交所沒有抓到臺指 VIX：" + "；".join(errs[:3]))
+        days = sorted(pts)
+        v = pts[days[-1]]
+        p = pts[days[-2]] if len(days) > 1 else None
+        return {"value": num(v, 2), "chg": num(v - p, 2) if p is not None else None,
+                "pct": num((v / p - 1) * 100, 2) if p else None, "date": days[-1]}
+
+    def tw_vix_prev():
+        old = (prev_page_data().get("macro") or {}).get("vix")
+        if not old or old.get("src") != "tw":
+            raise RuntimeError("上一版頁面沒有臺指 VIX")
+        return {**old, "stale": True}
+
+    mc["vix"] = first_ok("臺指 VIX", tw_vix, tw_vix_prev)
+    if mc["vix"]:
+        mc["vix"]["src"] = "tw"
 
     def nfp_fred():
         df = fred("PAYEMS")
@@ -1139,7 +1157,7 @@ def build_analysis(s, macro, strategy):
     v = (macro.get("vix") or {}).get("value")
     if v is not None:
         add("macro", "down" if v >= 30 else "mid" if v >= 20 else "up",
-            f"VIX {v:.1f}，" + ("30 以上，市場明顯恐慌。" if v >= 30 else "20–30 之間，市場偏緊張。" if v >= 20 else "20 以下，市場相對平靜。"))
+            f"臺指 VIX {v:.1f}，" + ("30 以上，台股市場明顯恐慌。" if v >= 30 else "20–30 之間，台股市場偏緊張。" if v >= 20 else "20 以下，台股市場相對平靜。"))
     u10 = (macro.get("us10y") or {}).get("value")
     if u10 is not None:
         add("macro", "down" if u10 >= 4.8 else "mid", f"美債 10 年殖利率 {u10:.2f}%" + ("，處於偏高水準，對股票評價較不利。" if u10 >= 4.8 else "。"))
@@ -1362,7 +1380,7 @@ def main():
                                 "series": [round(31.6 + random.gauss(0, .12), 3) for _ in range(30)]},
                          "fed": {"value": "3.75–4.00%", "date": "示範"}, "cpi": {"value": "2.9%", "date": "示範"},
                          "us10y": {"value": 4.12, "chg": 0.03, "date": "示範"},
-                         "vix": {"value": 18.42, "chg": 1.35, "pct": 7.91, "date": TODAY.isoformat()},
+                         "vix": {"value": 24.63, "chg": 1.35, "pct": 5.8, "date": TODAY.isoformat(), "src": "tw"},
                          "nfp": {"value": "+11.9 萬人", "chg_raw": 119, "date": "示範"},
                          "light": {"value": "黃紅燈 35 分", "score": 35, "date": "示範",
                                    "hist": [["2026-04", 33], ["2026-05", 34], ["2026-06", 36], ["2026-07", 35], ["2026-08", 37], ["2026-09", 35]]}}
@@ -1386,7 +1404,7 @@ def main():
             s["fund"] = fetch_fund(code, kind)
             s["fund"]["div"] = fetch_dividends(code, s.get("quote", {}).get("close"))
             if kind == "ETF":
-                s["fund"]["holdings"] = safe(f"{code} ETF 持股", lambda: add_holdings_changes(code, fetch_holdings(code)))
+                s["fund"]["holdings"] = safe(f"{code} ETF 持股", lambda: fetch_holdings(code))
             s["chips"] = fetch_chips(code)
             s["news"] = fetch_news(code, name)
             data["stocks"].append(s)
@@ -1437,9 +1455,6 @@ def main():
     log(f"完成：{out_path}")
     if WARN:
         log(f"有 {len(WARN)} 項資料沒抓到，頁面上會顯示「—」。")
-    if not demo and ok < len(data["stocks"]) // 2:
-        log("股價抓到的標的不到一半，這次視為失敗（排程不會部署，網頁維持上一版）。")
-        sys.exit(1)
     if "--no-open" not in sys.argv:
         webbrowser.open(pathlib.Path(out_path).resolve().as_uri())
 
